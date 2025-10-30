@@ -4,7 +4,8 @@
 //go:build !js
 // +build !js
 
-// sfu-ws is a many-to-many websocket based SFU
+// sfu-ws là một SFU (Selective Forwarding Unit) cơ bản,
+// hỗ trợ nhiều-đến-nhiều (many-to-many) sử dụng WebSocket để truyền tín hiệu (signaling).
 package main
 
 import (
@@ -16,11 +17,11 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/pion/logging"
-	"github.com/pion/rtcp"
-	"github.com/pion/rtp"
-	"github.com/pion/webrtc/v4"
+	"github.com/gorilla/websocket" // Thư viện WebSocket
+	"github.com/pion/logging"      // Thư viện logging của Pion
+	"github.com/pion/rtcp"         // Gói tin RTCP (ví dụ: để yêu cầu keyframe)
+	"github.com/pion/rtp"          // Gói tin RTP (để truyền media)
+	"github.com/pion/webrtc/v4"    // Thư viện WebRTC của Pion
 )
 
 // nolint
