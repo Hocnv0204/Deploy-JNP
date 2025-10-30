@@ -4,18 +4,21 @@
 //go:build !js
 // +build !js
 
-// sfu-ws là một SFU (Selective Forwarding Unit) đa phòng (multi-room),
-// hỗ trợ nhiều-đến-nhiều (many-to-many) sử dụng WebSocket để truyền tín hiệu (signaling).
+// sfu-media-server là một SFU Server chuyên dụng (Media Server),
+// cung cấp REST API nội bộ để App Server điều khiển.
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/google/uuid"
 	"github.com/pion/logging"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
@@ -23,29 +26,51 @@ import (
 )
 
 var (
-	addr     = flag.String("addr", ":8080", "http service address")
-	upgrader = websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
-	}
-	log = logging.NewDefaultLoggerFactory().NewLogger("sfu-ws")
+	addr = flag.String("addr", ":8080", "http service address")
+	log  = logging.NewDefaultLoggerFactory().NewLogger("sfu-media")
 )
 
-type websocketMessage struct {
-	Event string `json:"event"`
-	Data  string `json:"data"`
+// API Request/Response Models
+type CreatePeerRequest struct {
+	RoomID     string `json:"roomId"`
+	WebhookURL string `json:"webhookUrl"` // URL để callback về App Server
 }
 
-type peerConnectionState struct {
+type CreatePeerResponse struct {
+	PeerID string                    `json:"peerId"`
+	Offer  webrtc.SessionDescription `json:"offer"`
+}
+
+type SetAnswerRequest struct {
+	Answer webrtc.SessionDescription `json:"answer"`
+}
+
+type AddCandidateRequest struct {
+	Candidate webrtc.ICECandidateInit `json:"candidate"`
+}
+
+type WebhookEvent struct {
+	PeerID string `json:"peerId"`
+	RoomID string `json:"roomId"`
+	Event  string `json:"event"` // "candidate" | "offer"
+	Data   string `json:"data"`
+}
+
+// PeerState quản lý trạng thái của một peer connection
+type PeerState struct {
+	id             string
+	roomID         string
 	peerConnection *webrtc.PeerConnection
-	websocket      *threadSafeWriter
+	webhookURL     string
+	room           *Room
 }
 
 // Room đại diện cho một phòng họp riêng biệt
 type Room struct {
-	id              string
-	mu              sync.RWMutex
-	peerConnections []peerConnectionState
-	trackLocals     map[string]*webrtc.TrackLocalStaticRTP
+	id          string
+	mu          sync.RWMutex
+	peers       map[string]*PeerState // map[peerID]*PeerState
+	trackLocals map[string]*webrtc.TrackLocalStaticRTP
 }
 
 // RoomManager quản lý tất cả các phòng họp
@@ -54,9 +79,16 @@ type RoomManager struct {
 	rooms map[string]*Room
 }
 
-var roomManager = &RoomManager{
-	rooms: make(map[string]*Room),
+// PeerManager quản lý tất cả peers
+type PeerManager struct {
+	mu    sync.RWMutex
+	peers map[string]*PeerState // map[peerID]*PeerState
 }
+
+var (
+	roomManager = &RoomManager{rooms: make(map[string]*Room)}
+	peerManager = &PeerManager{peers: make(map[string]*PeerState)}
+)
 
 // GetOrCreateRoom lấy hoặc tạo mới một phòng
 func (rm *RoomManager) GetOrCreateRoom(roomID string) *Room {
@@ -67,9 +99,9 @@ func (rm *RoomManager) GetOrCreateRoom(roomID string) *Room {
 	if !exists {
 		log.Infof("Creating new room: %s", roomID)
 		room = &Room{
-			id:              roomID,
-			peerConnections: make([]peerConnectionState, 0),
-			trackLocals:     make(map[string]*webrtc.TrackLocalStaticRTP),
+			id:          roomID,
+			peers:       make(map[string]*PeerState),
+			trackLocals: make(map[string]*webrtc.TrackLocalStaticRTP),
 		}
 		rm.rooms[roomID] = room
 	}
@@ -83,7 +115,7 @@ func (rm *RoomManager) CleanupRoom(roomID string) {
 
 	if room, exists := rm.rooms[roomID]; exists {
 		room.mu.RLock()
-		isEmpty := len(room.peerConnections) == 0
+		isEmpty := len(room.peers) == 0
 		room.mu.RUnlock()
 
 		if isEmpty {
@@ -93,7 +125,25 @@ func (rm *RoomManager) CleanupRoom(roomID string) {
 	}
 }
 
-// AddTrack thêm track vào phòng và trigger renegotiation
+// AddPeer thêm peer vào room
+func (r *Room) AddPeer(peer *PeerState) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.peers[peer.id] = peer
+	log.Infof("Room %s: Added peer %s. Total peers: %d", r.id, peer.id, len(r.peers))
+}
+
+// RemovePeer xóa peer khỏi room
+func (r *Room) RemovePeer(peerID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delete(r.peers, peerID)
+	log.Infof("Room %s: Removed peer %s. Remaining peers: %d", r.id, peerID, len(r.peers))
+}
+
+// AddTrack thêm track vào phòng
 func (r *Room) AddTrack(t *webrtc.TrackRemote) *webrtc.TrackLocalStaticRTP {
 	r.mu.Lock()
 	defer func() {
@@ -112,12 +162,12 @@ func (r *Room) AddTrack(t *webrtc.TrackRemote) *webrtc.TrackLocalStaticRTP {
 	}
 
 	r.trackLocals[t.ID()] = trackLocal
-	log.Infof("Added track to room %s: ID=%s", r.id, t.ID())
+	log.Infof("Room %s: Added track ID=%s", r.id, t.ID())
 
 	return trackLocal
 }
 
-// RemoveTrack xóa track khỏi phòng và trigger renegotiation
+// RemoveTrack xóa track khỏi phòng
 func (r *Room) RemoveTrack(t *webrtc.TrackLocalStaticRTP) {
 	r.mu.Lock()
 	defer func() {
@@ -126,10 +176,10 @@ func (r *Room) RemoveTrack(t *webrtc.TrackLocalStaticRTP) {
 	}()
 
 	delete(r.trackLocals, t.ID())
-	log.Infof("Removed track from room %s: ID=%s", r.id, t.ID())
+	log.Infof("Room %s: Removed track ID=%s", r.id, t.ID())
 }
 
-// SignalPeerConnections đồng bộ tracks cho tất cả peer connections trong phòng
+// SignalPeerConnections đồng bộ tracks cho tất cả peers trong phòng
 func (r *Room) SignalPeerConnections() {
 	r.mu.Lock()
 	defer func() {
@@ -137,67 +187,60 @@ func (r *Room) SignalPeerConnections() {
 		r.DispatchKeyFrame()
 	}()
 
-	attemptSync := func() (tryAgain bool) {
-		for i := range r.peerConnections {
-			if r.peerConnections[i].peerConnection.ConnectionState() == webrtc.PeerConnectionStateClosed {
-				r.peerConnections = append(r.peerConnections[:i], r.peerConnections[i+1:]...)
+	attemptSync := func() bool {
+		for _, peer := range r.peers {
+			pc := peer.peerConnection
+
+			if pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
+				delete(r.peers, peer.id)
 				return true
 			}
 
 			existingSenders := map[string]bool{}
 
-			for _, sender := range r.peerConnections[i].peerConnection.GetSenders() {
+			// Check existing senders
+			for _, sender := range pc.GetSenders() {
 				if sender.Track() == nil {
 					continue
 				}
-
 				existingSenders[sender.Track().ID()] = true
 
 				if _, ok := r.trackLocals[sender.Track().ID()]; !ok {
-					if err := r.peerConnections[i].peerConnection.RemoveTrack(sender); err != nil {
+					if err := pc.RemoveTrack(sender); err != nil {
 						return true
 					}
 				}
 			}
 
-			for _, receiver := range r.peerConnections[i].peerConnection.GetReceivers() {
+			// Mark receivers to avoid loopback
+			for _, receiver := range pc.GetReceivers() {
 				if receiver.Track() == nil {
 					continue
 				}
 				existingSenders[receiver.Track().ID()] = true
 			}
 
+			// Add missing tracks
 			for trackID := range r.trackLocals {
-				if _, ok := existingSenders[trackID]; !ok {
-					if _, err := r.peerConnections[i].peerConnection.AddTrack(r.trackLocals[trackID]); err != nil {
+				if !existingSenders[trackID] {
+					if _, err := pc.AddTrack(r.trackLocals[trackID]); err != nil {
 						return true
 					}
 				}
 			}
 
-			offer, err := r.peerConnections[i].peerConnection.CreateOffer(nil)
+			// Create and send new offer
+			offer, err := pc.CreateOffer(nil)
 			if err != nil {
 				return true
 			}
 
-			if err = r.peerConnections[i].peerConnection.SetLocalDescription(offer); err != nil {
+			if err = pc.SetLocalDescription(offer); err != nil {
 				return true
 			}
 
-			offerString, err := json.Marshal(offer)
-			if err != nil {
-				log.Errorf("Failed to marshal offer: %v", err)
-				return true
-			}
-
-			log.Infof("Sending offer to peer in room %s", r.id)
-
-			if err = r.peerConnections[i].websocket.WriteJSON(&websocketMessage{
-				Event: "offer",
-				Data:  string(offerString),
-			}); err != nil {
-				return true
-			}
+			// Send offer via webhook
+			go sendWebhook(peer, "offer", offer)
 		}
 
 		return false
@@ -210,15 +253,15 @@ func (r *Room) SignalPeerConnections() {
 	}
 }
 
-// DispatchKeyFrame gửi keyframe request đến tất cả peers trong phòng
+// DispatchKeyFrame gửi keyframe request đến tất cả peers
 func (r *Room) DispatchKeyFrame() {
-	for i := range r.peerConnections {
-		for _, receiver := range r.peerConnections[i].peerConnection.GetReceivers() {
+	for _, peer := range r.peers {
+		for _, receiver := range peer.peerConnection.GetReceivers() {
 			if receiver.Track() == nil {
 				continue
 			}
 
-			_ = r.peerConnections[i].peerConnection.WriteRTCP([]rtcp.Packet{
+			_ = peer.peerConnection.WriteRTCP([]rtcp.Packet{
 				&rtcp.PictureLossIndication{
 					MediaSSRC: uint32(receiver.Track().SSRC()),
 				},
@@ -227,22 +270,357 @@ func (r *Room) DispatchKeyFrame() {
 	}
 }
 
-// AddPeerConnection thêm peer connection vào phòng
-func (r *Room) AddPeerConnection(pc peerConnectionState) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// sendWebhook gửi event về App Server
+func sendWebhook(peer *PeerState, event string, data interface{}) {
+	if peer.webhookURL == "" {
+		return
+	}
 
-	r.peerConnections = append(r.peerConnections, pc)
-	log.Infof("Added peer to room %s. Total peers: %d", r.id, len(r.peerConnections))
+	dataJSON, err := json.Marshal(data)
+	if err != nil {
+		log.Errorf("Failed to marshal webhook data: %v", err)
+		return
+	}
+
+	webhook := WebhookEvent{
+		PeerID: peer.id,
+		RoomID: peer.roomID,
+		Event:  event,
+		Data:   string(dataJSON),
+	}
+
+	body, err := json.Marshal(webhook)
+	if err != nil {
+		log.Errorf("Failed to marshal webhook: %v", err)
+		return
+	}
+
+	resp, err := http.Post(peer.webhookURL, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		log.Errorf("Failed to send webhook to %s: %v", peer.webhookURL, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		log.Warnf("Webhook returned error status %d for peer %s", resp.StatusCode, peer.id)
+	} else {
+		log.Infof("Webhook sent successfully to %s for peer %s, event: %s", peer.webhookURL, peer.id, event)
+	}
+}
+
+// API Handlers
+
+// POST /api/peer/create
+// Tạo PeerConnection mới và trả về SDP Offer
+func createPeerHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req CreatePeerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.RoomID == "" {
+		http.Error(w, "roomId is required", http.StatusBadRequest)
+		return
+	}
+
+	log.Infof("Creating peer for room: %s", req.RoomID)
+
+	// Tạo PeerConnection
+	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		log.Errorf("Failed to create PeerConnection: %v", err)
+		http.Error(w, "Failed to create peer connection", http.StatusInternalServerError)
+		return
+	}
+
+	// Tạo peer state
+	peerID := uuid.New().String()
+	room := roomManager.GetOrCreateRoom(req.RoomID)
+
+	peer := &PeerState{
+		id:             peerID,
+		roomID:         req.RoomID,
+		peerConnection: peerConnection,
+		webhookURL:     req.WebhookURL,
+		room:           room,
+	}
+
+	// Lưu peer
+	peerManager.mu.Lock()
+	peerManager.peers[peerID] = peer
+	peerManager.mu.Unlock()
+
+	room.AddPeer(peer)
+
+	// Setup transceivers
+	for _, typ := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeVideo, webrtc.RTPCodecTypeAudio} {
+		if _, err := peerConnection.AddTransceiverFromKind(typ, webrtc.RTPTransceiverInit{
+			Direction: webrtc.RTPTransceiverDirectionRecvonly,
+		}); err != nil {
+			log.Errorf("Failed to add transceiver: %v", err)
+			http.Error(w, "Failed to setup transceivers", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Setup callbacks
+	setupPeerCallbacks(peer)
+
+	// Tạo offer
+	offer, err := peerConnection.CreateOffer(nil)
+	if err != nil {
+		log.Errorf("Failed to create offer: %v", err)
+		http.Error(w, "Failed to create offer", http.StatusInternalServerError)
+		return
+	}
+
+	if err = peerConnection.SetLocalDescription(offer); err != nil {
+		log.Errorf("Failed to set local description: %v", err)
+		http.Error(w, "Failed to set local description", http.StatusInternalServerError)
+		return
+	}
+
+	// Trả về response
+	resp := CreatePeerResponse{
+		PeerID: peerID,
+		Offer:  offer,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+
+	log.Infof("Created peer %s for room %s", peerID, req.RoomID)
+
+	// Trigger signaling cho các peer khác
+	go room.SignalPeerConnections()
+}
+
+// POST /api/peer/{peerId}/answer
+// Nhận SDP Answer từ client
+func setAnswerHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	peerID := r.URL.Path[len("/api/peer/"):]
+	if idx := len(peerID) - len("/answer"); idx > 0 {
+		peerID = peerID[:idx]
+	}
+
+	peerManager.mu.RLock()
+	peer, exists := peerManager.peers[peerID]
+	peerManager.mu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Peer not found", http.StatusNotFound)
+		return
+	}
+
+	var req SetAnswerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	log.Infof("Setting answer for peer %s", peerID)
+
+	if err := peer.peerConnection.SetRemoteDescription(req.Answer); err != nil {
+		log.Errorf("Failed to set remote description: %v", err)
+		http.Error(w, "Failed to set answer", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"status":"ok"}`)
+}
+
+// POST /api/peer/{peerId}/candidate
+// Nhận ICE Candidate từ client
+func addCandidateHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	peerID := r.URL.Path[len("/api/peer/"):]
+	if idx := len(peerID) - len("/candidate"); idx > 0 {
+		peerID = peerID[:idx]
+	}
+
+	peerManager.mu.RLock()
+	peer, exists := peerManager.peers[peerID]
+	peerManager.mu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Peer not found", http.StatusNotFound)
+		return
+	}
+
+	var req AddCandidateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	log.Infof("Adding ICE candidate for peer %s", peerID)
+
+	if err := peer.peerConnection.AddICECandidate(req.Candidate); err != nil {
+		log.Errorf("Failed to add ICE candidate: %v", err)
+		http.Error(w, "Failed to add candidate", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"status":"ok"}`)
+}
+
+// DELETE /api/peer/{peerId}
+// Xóa peer connection
+func deletePeerHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	peerID := r.URL.Path[len("/api/peer/"):]
+
+	peerManager.mu.Lock()
+	peer, exists := peerManager.peers[peerID]
+	if exists {
+		delete(peerManager.peers, peerID)
+	}
+	peerManager.mu.Unlock()
+
+	if !exists {
+		http.Error(w, "Peer not found", http.StatusNotFound)
+		return
+	}
+
+	log.Infof("Deleting peer %s from room %s", peerID, peer.roomID)
+
+	peer.peerConnection.Close()
+	peer.room.RemovePeer(peerID)
+	roomManager.CleanupRoom(peer.roomID)
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"status":"ok"}`)
+}
+
+// setupPeerCallbacks thiết lập các callback cho PeerConnection
+func setupPeerCallbacks(peer *PeerState) {
+	pc := peer.peerConnection
+
+	// ICE Candidate callback
+	pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
+		if candidate == nil {
+			return
+		}
+
+		log.Infof("Peer %s: New ICE candidate", peer.id)
+		go sendWebhook(peer, "candidate", candidate.ToJSON())
+	})
+
+	// Connection state callback
+	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		log.Infof("Peer %s: Connection state = %s", peer.id, state)
+
+		switch state {
+		case webrtc.PeerConnectionStateFailed:
+			pc.Close()
+		case webrtc.PeerConnectionStateClosed:
+			peer.room.RemovePeer(peer.id)
+			peerManager.mu.Lock()
+			delete(peerManager.peers, peer.id)
+			peerManager.mu.Unlock()
+			roomManager.CleanupRoom(peer.roomID)
+		}
+	})
+
+	// ICE Connection state callback
+	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		log.Infof("Peer %s: ICE connection state = %s", peer.id, state)
+	})
+
+	// Track callback - xử lý incoming media
+	pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		log.Infof("Peer %s: New track - Kind=%s, ID=%s", peer.id, track.Kind(), track.ID())
+
+		trackLocal := peer.room.AddTrack(track)
+		if trackLocal == nil {
+			return
+		}
+		defer peer.room.RemoveTrack(trackLocal)
+
+		buf := make([]byte, 1500)
+		rtpPkt := &rtp.Packet{}
+
+		for {
+			n, _, err := track.Read(buf)
+			if err != nil {
+				if err != io.EOF {
+					log.Errorf("Peer %s: Track read error: %v", peer.id, err)
+				}
+				return
+			}
+
+			if err = rtpPkt.Unmarshal(buf[:n]); err != nil {
+				log.Errorf("Peer %s: Failed to unmarshal RTP: %v", peer.id, err)
+				return
+			}
+
+			// Strip extensions
+			rtpPkt.Extension = false
+			rtpPkt.Extensions = nil
+
+			if err = trackLocal.WriteRTP(rtpPkt); err != nil {
+				if err != io.EOF {
+					log.Errorf("Peer %s: Track write error: %v", peer.id, err)
+				}
+				return
+			}
+		}
+	})
 }
 
 func main() {
 	flag.Parse()
 
-	// WebSocket handler với room ID từ query parameter
-	http.HandleFunc("/websocket", websocketHandler)
+	// API Routes
+	http.HandleFunc("/api/peer/create", createPeerHandler)
+	http.HandleFunc("/api/peer/", func(w http.ResponseWriter, r *http.Request) {
+		// Route to appropriate handler based on path
+		if r.URL.Path == "/api/peer/create" {
+			createPeerHandler(w, r)
+		} else if len(r.URL.Path) > len("/api/peer/") {
+			if r.URL.Path[len(r.URL.Path)-7:] == "/answer" {
+				setAnswerHandler(w, r)
+			} else if r.URL.Path[len(r.URL.Path)-10:] == "/candidate" {
+				addCandidateHandler(w, r)
+			} else if r.Method == http.MethodDelete {
+				deletePeerHandler(w, r)
+			} else {
+				http.NotFound(w, r)
+			}
+		} else {
+			http.NotFound(w, r)
+		}
+	})
 
-	// Định kỳ gửi keyframe cho tất cả các phòng
+	// Health check endpoint
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"status":"healthy"}`)
+	})
+
+	// Định kỳ gửi keyframe
 	go func() {
 		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
@@ -258,192 +636,15 @@ func main() {
 		}
 	}()
 
-	log.Infof("SFU Server starting on %s", *addr)
+	log.Infof("SFU Media Server starting on %s", *addr)
+	log.Infof("API Endpoints:")
+	log.Infof("  POST   /api/peer/create")
+	log.Infof("  POST   /api/peer/{peerId}/answer")
+	log.Infof("  POST   /api/peer/{peerId}/candidate")
+	log.Infof("  DELETE /api/peer/{peerId}")
+	log.Infof("  GET    /health")
+
 	if err := http.ListenAndServe(*addr, nil); err != nil {
 		log.Errorf("Failed to start server: %v", err)
 	}
-}
-
-// websocketHandler xử lý WebSocket connections với room isolation
-func websocketHandler(w http.ResponseWriter, r *http.Request) {
-	// Lấy room ID từ query parameter
-	roomID := r.URL.Query().Get("room")
-	if roomID == "" {
-		log.Errorf("Missing room parameter")
-		http.Error(w, "Missing room parameter", http.StatusBadRequest)
-		return
-	}
-
-	log.Infof("New connection request for room: %s", roomID)
-
-	// Upgrade to WebSocket
-	unsafeConn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Errorf("Failed to upgrade to WebSocket: %v", err)
-		return
-	}
-
-	c := &threadSafeWriter{unsafeConn, sync.Mutex{}}
-	defer c.Close()
-
-	// Lấy hoặc tạo phòng
-	room := roomManager.GetOrCreateRoom(roomID)
-
-	// Tạo PeerConnection
-	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{})
-	if err != nil {
-		log.Errorf("Failed to create PeerConnection: %v", err)
-		return
-	}
-	defer peerConnection.Close()
-
-	// Thêm transceivers cho audio và video
-	for _, typ := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeVideo, webrtc.RTPCodecTypeAudio} {
-		if _, err := peerConnection.AddTransceiverFromKind(typ, webrtc.RTPTransceiverInit{
-			Direction: webrtc.RTPTransceiverDirectionRecvonly,
-		}); err != nil {
-			log.Errorf("Failed to add transceiver: %v", err)
-			return
-		}
-	}
-
-	// Thêm peer vào phòng
-	room.AddPeerConnection(peerConnectionState{peerConnection, c})
-
-	// Trickle ICE
-	peerConnection.OnICECandidate(func(i *webrtc.ICECandidate) {
-		if i == nil {
-			return
-		}
-
-		candidateString, err := json.Marshal(i.ToJSON())
-		if err != nil {
-			log.Errorf("Failed to marshal candidate: %v", err)
-			return
-		}
-
-		log.Infof("Sending ICE candidate to peer in room %s", roomID)
-
-		if err := c.WriteJSON(&websocketMessage{
-			Event: "candidate",
-			Data:  string(candidateString),
-		}); err != nil {
-			log.Errorf("Failed to send candidate: %v", err)
-		}
-	})
-
-	// Connection state changes
-	peerConnection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		log.Infof("Room %s - Connection state: %s", roomID, state)
-
-		switch state {
-		case webrtc.PeerConnectionStateFailed:
-			if err := peerConnection.Close(); err != nil {
-				log.Errorf("Failed to close PeerConnection: %v", err)
-			}
-		case webrtc.PeerConnectionStateClosed:
-			room.SignalPeerConnections()
-			roomManager.CleanupRoom(roomID)
-		}
-	})
-
-	// Xử lý incoming tracks
-	peerConnection.OnTrack(func(t *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		log.Infof("Room %s - New track: Kind=%s, ID=%s", roomID, t.Kind(), t.ID())
-
-		trackLocal := room.AddTrack(t)
-		if trackLocal == nil {
-			return
-		}
-		defer room.RemoveTrack(trackLocal)
-
-		buf := make([]byte, 1500)
-		rtpPkt := &rtp.Packet{}
-
-		for {
-			i, _, err := t.Read(buf)
-			if err != nil {
-				return
-			}
-
-			if err = rtpPkt.Unmarshal(buf[:i]); err != nil {
-				log.Errorf("Failed to unmarshal RTP: %v", err)
-				return
-			}
-
-			rtpPkt.Extension = false
-			rtpPkt.Extensions = nil
-
-			if err = trackLocal.WriteRTP(rtpPkt); err != nil {
-				return
-			}
-		}
-	})
-
-	peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		log.Infof("Room %s - ICE state: %s", roomID, state)
-	})
-
-	// Signal cho peer mới
-	room.SignalPeerConnections()
-
-	// Xử lý WebSocket messages
-	message := &websocketMessage{}
-	for {
-		_, raw, err := c.ReadMessage()
-		if err != nil {
-			log.Errorf("Room %s - Failed to read message: %v", roomID, err)
-			return
-		}
-
-		if err := json.Unmarshal(raw, &message); err != nil {
-			log.Errorf("Room %s - Failed to unmarshal message: %v", roomID, err)
-			return
-		}
-
-		switch message.Event {
-		case "candidate":
-			candidate := webrtc.ICECandidateInit{}
-			if err := json.Unmarshal([]byte(message.Data), &candidate); err != nil {
-				log.Errorf("Failed to unmarshal candidate: %v", err)
-				return
-			}
-
-			log.Infof("Room %s - Received ICE candidate", roomID)
-
-			if err := peerConnection.AddICECandidate(candidate); err != nil {
-				log.Errorf("Failed to add ICE candidate: %v", err)
-				return
-			}
-
-		case "answer":
-			answer := webrtc.SessionDescription{}
-			if err := json.Unmarshal([]byte(message.Data), &answer); err != nil {
-				log.Errorf("Failed to unmarshal answer: %v", err)
-				return
-			}
-
-			log.Infof("Room %s - Received answer", roomID)
-
-			if err := peerConnection.SetRemoteDescription(answer); err != nil {
-				log.Errorf("Failed to set remote description: %v", err)
-				return
-			}
-
-		default:
-			log.Errorf("Room %s - Unknown message event: %s", roomID, message.Event)
-		}
-	}
-}
-
-// threadSafeWriter wrapper cho Gorilla WebSocket
-type threadSafeWriter struct {
-	*websocket.Conn
-	sync.Mutex
-}
-
-func (t *threadSafeWriter) WriteJSON(v any) error {
-	t.Lock()
-	defer t.Unlock()
-	return t.Conn.WriteJSON(v)
 }
