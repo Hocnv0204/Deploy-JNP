@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/pion/logging"
 )
 
@@ -24,29 +26,24 @@ var (
 func main() {
 	flag.Parse()
 
-	// API Routes
-	http.HandleFunc("/api/peer/create", createPeerHandler)
-	http.HandleFunc("/api/peer/", func(w http.ResponseWriter, r *http.Request) {
-		// Route to appropriate handler based on path
-		if r.URL.Path == "/api/peer/create" {
-			createPeerHandler(w, r)
-		} else if len(r.URL.Path) > len("/api/peer/") {
-			if r.URL.Path[len(r.URL.Path)-7:] == "/answer" {
-				setAnswerHandler(w, r)
-			} else if r.URL.Path[len(r.URL.Path)-10:] == "/candidate" {
-				addCandidateHandler(w, r)
-			} else if r.Method == http.MethodDelete {
-				deletePeerHandler(w, r)
-			} else {
-				http.NotFound(w, r)
-			}
-		} else {
-			http.NotFound(w, r)
-		}
-	})
+	// Tạo router
+	r := chi.NewRouter()
+
+	// Middleware
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.RequestID)
 
 	// Health check endpoint
-	http.HandleFunc("/health", healthCheckHandler)
+	r.Get("/health", healthCheckHandler)
+
+	// API Routes
+	r.Route("/api/peer", func(r chi.Router) {
+		r.Post("/create", createPeerHandler)
+		r.Post("/{peerId}/answer", setAnswerHandler)
+		r.Post("/{peerId}/candidate", addCandidateHandler)
+		r.Delete("/{peerId}", deletePeerHandler)
+	})
 
 	// Định kỳ gửi keyframe
 	go func() {

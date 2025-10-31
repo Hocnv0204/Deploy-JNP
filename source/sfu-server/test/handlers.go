@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/pion/webrtc/v4"
 )
@@ -15,11 +16,6 @@ import (
 // createPeerHandler xử lý POST /api/peer/create
 // Tạo PeerConnection mới và trả về SDP Offer
 func createPeerHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var req CreatePeerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -106,14 +102,10 @@ func createPeerHandler(w http.ResponseWriter, r *http.Request) {
 // setAnswerHandler xử lý POST /api/peer/{peerId}/answer
 // Nhận SDP Answer từ client
 func setAnswerHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	peerID := chi.URLParam(r, "peerId")
+	if peerID == "" {
+		http.Error(w, "Missing peerId parameter", http.StatusBadRequest)
 		return
-	}
-
-	peerID := r.URL.Path[len("/api/peer/"):]
-	if idx := len(peerID) - len("/answer"); idx > 0 {
-		peerID = peerID[:idx]
 	}
 
 	peerManager.mu.RLock()
@@ -139,6 +131,7 @@ func setAnswerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"ok"}`)
 }
@@ -146,14 +139,10 @@ func setAnswerHandler(w http.ResponseWriter, r *http.Request) {
 // addCandidateHandler xử lý POST /api/peer/{peerId}/candidate
 // Nhận ICE Candidate từ client
 func addCandidateHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	peerID := chi.URLParam(r, "peerId")
+	if peerID == "" {
+		http.Error(w, "Missing peerId parameter", http.StatusBadRequest)
 		return
-	}
-
-	peerID := r.URL.Path[len("/api/peer/"):]
-	if idx := len(peerID) - len("/candidate"); idx > 0 {
-		peerID = peerID[:idx]
 	}
 
 	peerManager.mu.RLock()
@@ -179,6 +168,7 @@ func addCandidateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"ok"}`)
 }
@@ -186,12 +176,11 @@ func addCandidateHandler(w http.ResponseWriter, r *http.Request) {
 // deletePeerHandler xử lý DELETE /api/peer/{peerId}
 // Xóa peer connection
 func deletePeerHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	peerID := chi.URLParam(r, "peerId")
+	if peerID == "" {
+		http.Error(w, "Missing peerId parameter", http.StatusBadRequest)
 		return
 	}
-
-	peerID := r.URL.Path[len("/api/peer/"):]
 
 	peerManager.mu.Lock()
 	peer, exists := peerManager.peers[peerID]
@@ -211,12 +200,14 @@ func deletePeerHandler(w http.ResponseWriter, r *http.Request) {
 	peer.room.RemovePeer(peerID)
 	roomManager.CleanupRoom(peer.roomID)
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"ok"}`)
 }
 
 // healthCheckHandler xử lý GET /health
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"healthy"}`)
 }
