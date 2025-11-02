@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: webrtc
+
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:webrtc_db;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    username: sa
+    password:
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+server:
+  port: 8081
