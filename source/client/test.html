@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Test WebSocket</title>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+</head>
+<body>
+  <h2>🔌 Test Spring WebSocket</h2>
+
+  <button onclick="connect()">Connect</button>
+  <button onclick="disconnect()">Disconnect</button>
+  <input id="message" placeholder="Enter message" />
+  <button onclick="sendMessage()">Send</button>
+
+  <div id="status"></div>
+  <div id="output"></div>
+
+  <script>
+    let stompClient = null;
+
+    function connect() {
+        const socket = new SockJS("http://localhost:8080/websocket");
+      stompClient = Stomp.over(socket);
+
+      stompClient.connect({}, function (frame) {
+        document.getElementById("status").innerText = "✅ Connected: " + frame;
+        console.log("Connected: " + frame);
+
+        stompClient.subscribe("/topic/greetings", function (message) {
+          document.getElementById("output").innerHTML +=
+            `<p><b>${message.body}</b></p>`;
+        });
+      });
+    }
+
+    function disconnect() {
+      if (stompClient !== null) stompClient.disconnect();
+      document.getElementById("status").innerText = "❌ Disconnected";
+    }
+
+    function sendMessage() {
+      const msg = document.getElementById("message").value;
+      stompClient.send("/app/hello", {}, msg);
+      console.log("Sent:", msg);
+    }
+  </script>
+</body>
+</html>
