@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: webrtc
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/webrtc
+    username: postgres
+    password: 123456
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  port: 8081
