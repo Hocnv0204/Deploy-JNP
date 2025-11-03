@@ -13,21 +13,20 @@ import (
 	"net/http"
 	"time"
 
-	// Chi là lightweight router cho HTTP server
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	// Pion logging dùng để ghi log gọn và thread-safe
 	"github.com/pion/logging"
 )
 
-// Các biến toàn cục cho địa chỉ server và loggerz
+// Các biến toàn cục cho địa chỉ server và logger
 var (
-	addr = flag.String("addr", ":8080", "http service address") // Địa chỉ HTTP server (mặc định :8080)
+	addr = flag.String("addr", ":8080", "http service address")
 	log  logging.LeveledLogger
 )
 
 func main() {
+	// Khởi tạo logger
 	loggerFactory := logging.NewDefaultLoggerFactory()
 	loggerFactory.DefaultLogLevel = logging.LogLevelInfo
 	log = loggerFactory.NewLogger("sfu-media")
@@ -43,7 +42,6 @@ func main() {
 	r.Use(middleware.RequestID) // Gán ID duy nhất cho mỗi request để dễ debug
 
 	// ===== Endpoint kiểm tra sức khỏe =====
-	// App Server hoặc load balancer có thể ping vào /health để kiểm tra server còn hoạt động
 	r.Get("/health", healthCheckHandler)
 
 	// ===== Các route điều khiển Peer =====
