@@ -20,6 +20,9 @@ spring:
 server:
   port: 8081
 
+sfu:
+  base-url: http://webrtc-sfu:8090
+
 logging:
   file:
     name: /var/log/springboot/webrtc.log
