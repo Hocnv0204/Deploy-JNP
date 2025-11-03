@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/webhook")
+@RequestMapping({"/webhook", "/sfu-webhook"})
 public class WebhookController {
 
     private final WebhookService webhookService;
