@@ -6,11 +6,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
-
 	"github.com/go-chi/chi/v5"  // Import router chi, dùng để điều hướng URL
 	"github.com/google/uuid"    // Import thư viện UUID để tạo ID duy nhất
 	"github.com/pion/webrtc/v4" // Import thư viện WebRTC chính của Pion
+	"net/http"
 )
 
 // createPeerHandler xử lý POST /api/peer/create
@@ -32,12 +31,38 @@ func createPeerHandler(w http.ResponseWriter, r *http.Request) {
 	log.Infof("Creating peer for room: %s", req.RoomID)
 
 	// 3. Tạo một PeerConnection mới với cấu hình mặc định (STUN/TURN...)
-	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{
-				URLs: []string{"stun:stun.l.google.com:1902"},
-			},
+	settingEngine := webrtc.SettingEngine{}
+
+	// Chỉ định dải cổng UDP mà Pion được phép sử dụng
+	if err := settingEngine.SetEphemeralUDPPortRange(50000, 50100); err != nil {
+		log.Errorf("Failed to set ephemeral UDP port range: %v", err)
+		http.Error(w, "Server configuration error", http.StatusInternalServerError)
+		return
+	}
+
+	// Tạo một API mới với Setting Engine đã được cấu hình
+	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
+
+	// Khai báo cấu hình STUN/TURN
+	iceServers := []webrtc.ICEServer{
+		{
+			URLs: []string{"stun:stun.relay.metered.ca:80"},
 		},
+		{
+			URLs: []string{
+				"turn:global.relay.metered.ca:80",
+				"turn:global.relay.metered.ca:80?transport=tcp",
+				"turn:global.relay.metered.ca:443",
+				"turns:global.relay.metered.ca:443?transport=tcp",
+			},
+			Username:   "b25f13a908741ebc9b2a58c7",
+			Credential: "flOn9NEcWNvD8clt",
+		},
+	}
+
+	// Sử dụng danh sách iceServers đã được cấu hình
+	peerConnection, err := api.NewPeerConnection(webrtc.Configuration{
+		ICEServers: iceServers,
 	})
 	if err != nil {
 		log.Errorf("Failed to create PeerConnection: %v", err)
