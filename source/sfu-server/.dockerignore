@@ -1,0 +1,19 @@
+# Bỏ qua Git
+.gitignore
+.github
+
+# Bỏ qua các file rác của hệ điều hành
+.DS_Store
+Thumbs.db
+
+# Bỏ qua file binary đã build ở local (nếu có)
+sfu-server
+*.exe
+
+# === THÊM VÀO ===
+# Bỏ qua thư mục và file của IDE
+.idea/
+*.iml
+
+# Bỏ qua thư mục test
+test/

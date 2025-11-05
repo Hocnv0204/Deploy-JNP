@@ -21,7 +21,7 @@ import (
 
 // Các biến toàn cục cho địa chỉ server và logger
 var (
-	addr = flag.String("addr", ":8080", "http service address")
+	addr = flag.String("addr", ":8090", "http service address")
 	log  logging.LeveledLogger
 )
 
