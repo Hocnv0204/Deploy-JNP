@@ -50,7 +50,7 @@ export default function HomePage() {
     };
     localStorage.setItem("currentRoom", JSON.stringify(currentRoom));
 
-    navigate("/room");
+    navigate(`/room/${roomCode}`);
   };
 
   const handleJoinRoom = () => {
@@ -59,7 +59,7 @@ export default function HomePage() {
 
   const handleJoinRoomSubmit = (roomCode: string) => {
     setIsJoinModalOpen(false);
-  
+
     // Save current joined room
     const currentRoom = {
       code: roomCode,
@@ -67,11 +67,10 @@ export default function HomePage() {
       joinedAt: new Date().toISOString(),
     };
     localStorage.setItem("currentRoom", JSON.stringify(currentRoom));
-  
+
     // Navigate to RoomPage directly (không cần waiting-room)
-    navigate("/room");
+    navigate(`/room/${roomCode}`);
   };
-  
 
   if (!currentUser) {
     return (
