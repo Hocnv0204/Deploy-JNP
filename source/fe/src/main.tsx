@@ -1,3 +1,4 @@
+(window as any).global = window;
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
@@ -33,7 +34,7 @@ const router = createBrowserRouter([
     errorElement: <ErrorPage />,
     children: [
       { path: "/", element: <HomePage /> },
-      { path: "/room", element: <RoomPage /> },
+      { path: "/room/:roomId", element: <RoomPage /> },
     ],
   },
 ]);

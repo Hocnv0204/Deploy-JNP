@@ -50,7 +50,7 @@ export default function HomePage() {
     };
     localStorage.setItem("currentRoom", JSON.stringify(currentRoom));
 
-    navigate("/room");
+    navigate(`/room/${roomCode}`);
   };
 
   const handleJoinRoom = () => {
@@ -59,8 +59,17 @@ export default function HomePage() {
 
   const handleJoinRoomSubmit = (roomCode: string) => {
     setIsJoinModalOpen(false);
-    // Navigate to waiting room with room code
-    navigate(`/waiting-room?room=${roomCode}`);
+
+    // Save current joined room
+    const currentRoom = {
+      code: roomCode,
+      isHost: false,
+      joinedAt: new Date().toISOString(),
+    };
+    localStorage.setItem("currentRoom", JSON.stringify(currentRoom));
+
+    // Navigate to RoomPage directly (không cần waiting-room)
+    navigate(`/room/${roomCode}`);
   };
 
   if (!currentUser) {
