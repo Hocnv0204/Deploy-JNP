@@ -18,6 +18,7 @@ type PeerState struct {
 	peerConnection *webrtc.PeerConnection
 	webhookURL     string
 	room           *Room
+	closedByServer bool
 }
 
 // PeerManager quản lý tất cả peers
@@ -40,7 +41,7 @@ func setupPeerCallbacks(peer *PeerState) {
 			return
 		}
 
-		log.Infof("Peer %s: New ICE candidate", peer.id)
+		log.Infof("Find new ICE of SFU, need to send to peer: %s", peer.id)
 		go sendWebhook(peer, "candidate", candidate.ToJSON())
 	})
 
@@ -52,6 +53,12 @@ func setupPeerCallbacks(peer *PeerState) {
 		case webrtc.PeerConnectionStateFailed:
 			pc.Close()
 		case webrtc.PeerConnectionStateClosed:
+			if peer.closedByServer {
+				log.Infof("Peer %s closed by App Server, skip webhook", peer.id)
+			} else {
+				go sendWebhook(peer, "peer_disconnected", nil)
+			}
+
 			peer.room.RemovePeer(peer.id)
 			peerManager.mu.Lock()
 			delete(peerManager.peers, peer.id)
