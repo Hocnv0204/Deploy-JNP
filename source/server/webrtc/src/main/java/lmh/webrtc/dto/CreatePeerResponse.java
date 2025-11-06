@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 public class CreatePeerResponse {
     private String peerId;
     private SessionDescription offer;
+    private String username;
 }
 
 

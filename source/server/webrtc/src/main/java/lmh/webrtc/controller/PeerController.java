@@ -25,6 +25,11 @@ public class PeerController {
     @PostMapping("/create")
     public ResponseEntity<CreatePeerResponse> createPeer(@RequestBody CreatePeerRequest request) {
         CreatePeerResponse response = sfuClient.createPeer(request);
+        String username = org.springframework.security.core.context.SecurityContextHolder
+                .getContext()
+                .getAuthentication()
+                .getName();
+        response.setUsername(username);
         return ResponseEntity.ok(response);
     }
 
