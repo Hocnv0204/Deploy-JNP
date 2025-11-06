@@ -104,10 +104,31 @@ export default function RoomPage() {
 
       // Khi nhận remote stream (từ người khác)
       onRemoteStreamAdded: (stream, peerId) => {
-        console.log("📹 Remote stream from", peerId);
+        const streamId = stream.id;
+        console.log(
+          `📹 [RoomPage] Remote stream from peer ${peerId}, streamId: ${streamId}`
+        );
+
+        // 🔥 FIX: Kiểm tra duplicate dựa trên stream.id thực tế
         setRemoteStreams((prev) => {
+          // Kiểm tra xem stream.id đã tồn tại chưa
+          const existingEntry = Array.from(prev.values()).find(
+            (entry) => entry.stream.id === streamId
+          );
+
+          if (existingEntry) {
+            console.log(
+              `⚠️ [RoomPage] Stream ${streamId} already exists, skipping duplicate`
+            );
+            return prev; // Không thêm duplicate
+          }
+
+          // Stream mới, thêm vào Map
+          console.log(
+            `✅ [RoomPage] Adding NEW stream ${streamId} for peer ${peerId}`
+          );
           const newMap = new Map(prev);
-          newMap.set(peerId, { peerId, stream });
+          newMap.set(streamId, { peerId, stream }); // 🔥 Dùng streamId làm key
           return newMap;
         });
       },
