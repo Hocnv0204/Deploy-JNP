@@ -230,7 +230,8 @@ func addCandidateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // deletePeerHandler xử lý DELETE /api/peer/{peerId}
-// Xóa peer connection khi client chủ động rời phòng
+// Khi client chủ động rời phòng, chỉ cần đóng kết nối WebRTC.
+// Phần cleanup (xóa peer, dọn room, gửi webhook...) sẽ được callback OnConnectionStateChange xử lý.
 func deletePeerHandler(w http.ResponseWriter, r *http.Request) {
 	// 1. Lấy peerId từ URL
 	peerID := chi.URLParam(r, "peerId")
@@ -239,27 +240,27 @@ func deletePeerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Tìm và XÓA peer khỏi PeerManager (dùng Lock toàn cục)
-	peerManager.mu.Lock() // Dùng Lock (Write Lock) vì chúng ta sẽ xóa
+	// 2. Tìm peer trong PeerManager
+	peerManager.mu.RLock()
 	peer, exists := peerManager.peers[peerID]
-	if exists {
-		delete(peerManager.peers, peerID) // Xóa khỏi map quản lý
-	}
-	peerManager.mu.Unlock()
+	peerManager.mu.RUnlock()
 
 	if !exists {
 		http.Error(w, "Peer not found", http.StatusNotFound)
 		return
 	}
 
-	log.Infof("Deleting peer %s from room %s", peerID, peer.roomID)
+	log.Infof("Peer %s requested to disconnect from room %s", peerID, peer.roomID)
 
-	// 3. Dọn dẹp tài nguyên
-	peer.peerConnection.Close()          // Đóng kết nối WebRTC
-	peer.room.RemovePeer(peerID)         // Xóa peer khỏi danh sách thành viên của phòng
-	roomManager.CleanupRoom(peer.roomID) // Kiểm tra xem phòng có rỗng không để dọn dẹp
+	// 3. Đóng kết nối WebRTC
+	// Khi pc.Close() được gọi, callback OnConnectionStateChange(Closed) sẽ tự động:
+	// - Remove peer khỏi room
+	// - Xóa peer khỏi peerManager
+	// - Cleanup room
+	peer.closedByServer = true
+	peer.peerConnection.Close()
 
-	// 4. Trả về status 200 OK
+	// 4. Trả về phản hồi OK
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"ok"}`)
