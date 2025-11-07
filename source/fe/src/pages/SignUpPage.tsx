@@ -2,21 +2,13 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 
 interface SignUpFormData {
-  fullName: string;
   username: string;
   password: string;
   confirmPassword: string;
 }
 
-interface RegisteredUser {
-  username: string;
-  password: string;
-  fullName: string;
-}
-
 export default function SignUpPage() {
   const [formData, setFormData] = useState<SignUpFormData>({
-    fullName: "",
     username: "",
     password: "",
     confirmPassword: "",
@@ -36,17 +28,6 @@ export default function SignUpPage() {
   };
 
   const validateForm = (): boolean => {
-    // Validate full name
-    if (!formData.fullName.trim()) {
-      setError("Vui lòng nhập tên đầy đủ");
-      return false;
-    }
-
-    if (formData.fullName.trim().length < 3) {
-      setError("Tên phải có ít nhất 3 ký tự");
-      return false;
-    }
-
     // Validate username
     if (!formData.username.trim()) {
       setError("Vui lòng nhập username");
@@ -96,54 +77,75 @@ export default function SignUpPage() {
         return;
       }
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // 🔥 Call backend API
+      const response = await fetch("http://localhost:8081/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: formData.username,
+          password: formData.password,
+        }),
+      });
 
-      // Get existing users
-      const existingUsers = JSON.parse(
-        localStorage.getItem("users") || "[]"
-      ) as RegisteredUser[];
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
 
-      // Check if username already exists
-      if (existingUsers.some((u) => u.username === formData.username)) {
-        setError("Username đã tồn tại. Vui lòng chọn username khác.");
+        // Handle specific error cases
+        if (response.status === 409 || response.status === 400) {
+          setError(
+            errorData.message ||
+              "Username đã tồn tại. Vui lòng chọn username khác."
+          );
+        } else {
+          setError(errorData.message || "Đăng ký thất bại. Vui lòng thử lại.");
+        }
         setIsLoading(false);
         return;
       }
 
-      // Add demo user for testing
-      const usersToSave: RegisteredUser[] = [
-        {
-          username: "demo",
-          password: "123456",
-          fullName: "Demo User",
-        },
-        ...existingUsers,
-        {
-          username: formData.username,
-          password: formData.password,
-          fullName: formData.fullName,
-        },
-      ];
+      // Parse response
+      const data = await response.json();
+      const { accessToken, refreshToken } = data;
 
-      // Save to localStorage
-      localStorage.setItem("users", JSON.stringify(usersToSave));
+      if (!accessToken || !refreshToken) {
+        setError("Lỗi server: Không nhận được token");
+        setIsLoading(false);
+        return;
+      }
+
+      // Save tokens to localStorage
+      localStorage.setItem("accessToken", accessToken);
+      localStorage.setItem("refreshToken", refreshToken);
+
+      // Save user info to localStorage
+      localStorage.setItem(
+        "currentUser",
+        JSON.stringify({
+          username: formData.username,
+          fullName: formData.username, // Dùng username làm fullName
+          loginTime: new Date().toISOString(),
+        })
+      );
 
       // Show success message
       setSuccess("✅ Đăng ký thành công! Đang chuyển hướng...");
 
       // Clear form
       setFormData({
-        fullName: "",
         username: "",
         password: "",
         confirmPassword: "",
       });
 
-      // Redirect to login after 1.5 seconds
+      // Redirect to home after 1.5 seconds
       setTimeout(() => {
-        navigate("/login");
+        navigate("/");
       }, 1500);
+    } catch (err) {
+      console.error("Register error:", err);
+      setError("Không thể kết nối đến server. Vui lòng thử lại.");
     } finally {
       setIsLoading(false);
     }
@@ -185,22 +187,6 @@ export default function SignUpPage() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Full Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                👤 Tên đầy đủ
-              </label>
-              <input
-                type="text"
-                name="fullName"
-                value={formData.fullName}
-                onChange={handleChange}
-                placeholder="Nhập tên đầy đủ của bạn"
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-transparent transition"
-                disabled={isLoading}
-              />
-            </div>
-
             {/* Username */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -272,7 +258,6 @@ export default function SignUpPage() {
               📋 Yêu cầu:
             </p>
             <ul className="text-xs text-gray-700 space-y-1">
-              <li>✓ Tên phải có ít nhất 3 ký tự</li>
               <li>✓ Username phải có ít nhất 3 ký tự</li>
               <li>✓ Password phải có ít nhất 6 ký tự</li>
               <li>✓ Password phải trùng khớp</li>

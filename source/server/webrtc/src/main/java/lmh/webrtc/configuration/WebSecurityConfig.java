@@ -38,7 +38,9 @@ public class WebSecurityConfig {
             "/register",
             "/hello",
             "/webhook",
-            "/sfu-webhook"
+            "/sfu-webhook",
+            "/websocket/**",
+            "/api/**"
     };
 
     @Bean
@@ -80,7 +82,9 @@ public class WebSecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(List.of(
                 "http://127.0.0.1:3000", "http://localhost:3000",
-                "http://127.0.0.1:8080", "http://localhost:8080"
+                "http://127.0.0.1:8080", "http://localhost:8080",
+                "http://127.0.0.1:5173","http://localhost:5173"
+
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*") );

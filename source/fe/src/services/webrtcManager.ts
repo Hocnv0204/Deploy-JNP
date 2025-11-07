@@ -3,7 +3,6 @@
  * Kết nối với STOMP backend (Spring Boot)
  */
 import { Client as StompClient } from "@stomp/stompjs";
-
 export interface WebRTCConfig {
   iceServers?: RTCIceServer[];
   signalingUrl: string;
@@ -53,6 +52,7 @@ export class WebRTCManager {
    * Kết nối STOMP WebSocket
    * Sử dụng @stomp/stompjs để kết nối với App Server
    */
+
   async connectStomp(): Promise<void> {
     return new Promise((resolve, reject) => {
       console.log("[STOMP] 🔌 Connecting to:", this.config.signalingUrl);
