@@ -2,6 +2,7 @@ package lmh.webrtc.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lmh.webrtc.dto.ClientMessage;
 import lmh.webrtc.dto.WebhookEvent;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 public class WebhookService {
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final RoomStateService roomStateService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public String processWebhook(WebhookEvent webhookEvent) {
@@ -34,6 +36,7 @@ public class WebhookService {
         switch (event) {
             case "candidate" -> clientEvent = "sfu-candidate";
             case "offer" -> clientEvent = "sfu-offer";
+            case "peer_disconnected" -> clientEvent = "peer_disconnected";
             default -> {
                 log.debug("Ignoring unknown event from SFU: {}", event);
                 return "OK, unknown event";
@@ -43,13 +46,28 @@ public class WebhookService {
         try {
             JsonNode parsedData = objectMapper.readTree(rawData);
 
-            ClientMessage message = ClientMessage.builder()
-                    .event(clientEvent)
-                    .data(parsedData)
-                    .build();
-
-            String destination = "/queue/peers/" + peerId;
-            messagingTemplate.convertAndSend(destination, message);
+            if ("peer_disconnected".equals(clientEvent)) {
+                // For disconnection, broadcast to the room topic and cleanup state
+                String roomId = webhookEvent.getRoomId();
+                if (roomId != null) {
+                    roomStateService.removePeer(roomId, peerId);
+                    ObjectNode dataNode = objectMapper.createObjectNode();
+                    dataNode.put("peerId", peerId);
+                    dataNode.put("roomId", roomId);
+                    ClientMessage message = ClientMessage.builder()
+                            .event("peer_disconnected")
+                            .data(dataNode)
+                            .build();
+                    messagingTemplate.convertAndSend("/topic/rooms/" + roomId, message);
+                }
+            } else {
+                ClientMessage message = ClientMessage.builder()
+                        .event(clientEvent)
+                        .data(parsedData)
+                        .build();
+                String destination = "/queue/peers/" + peerId;
+                messagingTemplate.convertAndSend(destination, message);
+            }
 
             return "OK";
         } catch (Exception e) {
