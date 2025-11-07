@@ -6,12 +6,6 @@ interface LoginFormData {
   password: string;
 }
 
-interface RegisteredUser {
-  username: string;
-  password: string;
-  fullName: string;
-}
-
 export default function LoginPage() {
   const [formData, setFormData] = useState<LoginFormData>({
     username: "",
@@ -55,40 +49,54 @@ export default function LoginPage() {
         return;
       }
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // 🔥 Call backend API
+      const response = await fetch("http://localhost:8081/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: formData.username,
+          password: formData.password,
+        }),
+      });
 
-      // Get registered users from localStorage
-      const registeredUsers = JSON.parse(
-        localStorage.getItem("users") || "[]"
-      ) as RegisteredUser[];
-
-      // Check if user exists
-      const user = registeredUsers.find(
-        (u: RegisteredUser) =>
-          u.username === formData.username && u.password === formData.password
-      );
-
-      if (!user) {
-        setError("Username hoặc password không chính xác");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        setError(errorData.message || "Username hoặc password không chính xác");
         setIsLoading(false);
         return;
       }
+
+      // Parse response
+      const data = await response.json();
+      const { accessToken, refreshToken } = data;
+
+      if (!accessToken || !refreshToken) {
+        setError("Lỗi server: Không nhận được token");
+        setIsLoading(false);
+        return;
+      }
+
+      // Save tokens to localStorage
+      localStorage.setItem("accessToken", accessToken);
+      localStorage.setItem("refreshToken", refreshToken);
 
       // Save user info to localStorage
       localStorage.setItem(
         "currentUser",
         JSON.stringify({
-          username: user.username,
-          fullName: user.fullName,
+          username: formData.username,
+          fullName: formData.username, // Backend không trả về fullName, dùng username tạm
           loginTime: new Date().toISOString(),
         })
       );
 
       // Navigate to home
       navigate("/");
-    } catch {
-      setError("Có lỗi xảy ra. Vui lòng thử lại.");
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("Không thể kết nối đến server. Vui lòng thử lại.");
     } finally {
       setIsLoading(false);
     }
@@ -167,20 +175,6 @@ export default function LoginPage() {
               )}
             </button>
           </form>
-
-          {/* Demo Account */}
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-sm font-semibold text-blue-900 mb-2">
-              💡 Demo Account:
-            </p>
-            <p className="text-xs text-blue-800">
-              Username: <code className="bg-white px-2 py-1 rounded">demo</code>
-            </p>
-            <p className="text-xs text-blue-800">
-              Password:{" "}
-              <code className="bg-white px-2 py-1 rounded">123456</code>
-            </p>
-          </div>
 
           {/* Divider */}
           <div className="my-6 flex items-center gap-4">

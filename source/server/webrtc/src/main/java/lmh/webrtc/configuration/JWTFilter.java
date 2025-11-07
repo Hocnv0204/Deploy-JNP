@@ -34,7 +34,8 @@ public class JWTFilter extends OncePerRequestFilter {
             "/register",
             "/hello",
             "/webhook",
-            "/sfu-webhook"
+            "/sfu-webhook",
+            "/websocket/**"
     );
 
     @Override
@@ -68,6 +69,7 @@ public class JWTFilter extends OncePerRequestFilter {
         }
         filterChain.doFilter(request, response);
     }
+
 }
 
 

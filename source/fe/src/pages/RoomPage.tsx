@@ -6,7 +6,7 @@ import ChatPanel from "../components/ChatPanel";
 import ParticipantsList from "../components/ParticipantsList";
 import { WebRTCManager } from "../services/webrtcManager";
 import { useParams } from "react-router-dom";
-
+import { WS_ENDPOINTS, API_ENDPOINTS } from "../utils/constants";
 // Component để hiển thị remote video - giống Google Meet
 function RemoteVideo({
   peerId,
@@ -80,7 +80,6 @@ export default function RoomPage() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
   const [showJoinNotification, setShowJoinNotification] = useState(true);
@@ -98,7 +97,7 @@ export default function RoomPage() {
     if (!currentUser || !roomId) return;
     // instantiate manager and keep a reference for control from UI handlers
     const manager = new WebRTCManager({
-      signalingUrl: "http://localhost:8081/websocket", // URL backend STOMP
+      signalingUrl: WS_ENDPOINTS.STOMP, // URL backend STOMP
       roomId: roomId,
       userId: currentUser.username,
 
