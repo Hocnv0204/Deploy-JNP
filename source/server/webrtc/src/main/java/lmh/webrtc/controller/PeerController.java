@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lmh.webrtc.dto.AddCandidateRequest;
 import lmh.webrtc.dto.ClientMessage;
 import lmh.webrtc.dto.CreatePeerRequest;
+import lmh.webrtc.dto.CreatePeerWithUsernameRequest;
 import lmh.webrtc.dto.CreatePeerResponse;
 import lmh.webrtc.dto.PeerStateDto;
 import lmh.webrtc.dto.SetAnswerRequest;
@@ -52,6 +53,33 @@ public class PeerController {
                     .build();
             messagingTemplate.convertAndSend("/topic/rooms/" + roomId, msg);
         }
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/create-with-username")
+    public ResponseEntity<CreatePeerResponse> createPeerWithUsername(@RequestBody CreatePeerWithUsernameRequest request) {
+        CreatePeerRequest sfuReq = CreatePeerRequest.builder()
+                .roomId(request.getRoomId())
+                .webhookUrl(request.getWebhookUrl())
+                .build();
+
+        CreatePeerResponse response = sfuClient.createPeer(sfuReq);
+
+        String username = request.getUsername();
+        response.setUsername(username);
+        
+        String roomId = request.getRoomId();
+        String peerId = response.getPeerId();
+        if (roomId != null && peerId != null) {
+            PeerStateDto state = roomStateService.upsertPeerState(roomId, peerId, username, null, null);
+            ObjectNode dataNode = objectMapper.valueToTree(state);
+            ClientMessage msg = ClientMessage.builder()
+                    .event("peer_joined")
+                    .data(dataNode)
+                    .build();
+            messagingTemplate.convertAndSend("/topic/rooms/" + roomId, msg);
+        }
+
         return ResponseEntity.ok(response);
     }
 

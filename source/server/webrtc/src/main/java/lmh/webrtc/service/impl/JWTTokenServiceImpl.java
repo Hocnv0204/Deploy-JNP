@@ -17,7 +17,7 @@ import java.util.Map;
 @Service
 public class JWTTokenServiceImpl implements JWTTokenService {
 
-    @Value("${security.jwt.secret:your-256-bit-secret-your-256-bit-secret}")
+    @Value("${security.jwt.secret:secret-key}")
     private String secret;
 
     @Value("${security.jwt.access-exp-seconds:3600}")
