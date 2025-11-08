@@ -13,6 +13,7 @@ import lmh.webrtc.dto.SimpleStatusResponse;
 import lmh.webrtc.service.RoomStateService;
 import lmh.webrtc.service.SfuClient;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/peer")
+@Slf4j
 public class PeerController {
 
     private final SfuClient sfuClient;
@@ -58,31 +60,33 @@ public class PeerController {
 
     @PostMapping("/create-with-username")
     public ResponseEntity<CreatePeerResponse> createPeerWithUsername(@RequestBody CreatePeerWithUsernameRequest request) {
-        CreatePeerRequest sfuReq = CreatePeerRequest.builder()
-                .roomId(request.getRoomId())
-                .webhookUrl(request.getWebhookUrl())
-                .build();
+        log.info("Creating peer with username: roomId={}, username={}", request.getRoomId(), request.getUsername());
 
-        CreatePeerResponse response = sfuClient.createPeer(sfuReq);
+        // Gọi SFU để tạo peer
+        CreatePeerResponse response = sfuClient.createPeer(
+                CreatePeerRequest.builder()
+                        .roomId(request.getRoomId())
+                        .webhookUrl(request.getWebhookUrl())
+                        .build()
+        );
 
-        String username = request.getUsername();
-        response.setUsername(username);
-        
-        String roomId = request.getRoomId();
-        String peerId = response.getPeerId();
-        if (roomId != null && peerId != null) {
-            PeerStateDto state = roomStateService.upsertPeerState(roomId, peerId, username, null, null);
-            ObjectNode dataNode = objectMapper.valueToTree(state);
-            ClientMessage msg = ClientMessage.builder()
-                    .event("peer_joined")
-                    .data(dataNode)
-                    .build();
-            messagingTemplate.convertAndSend("/topic/rooms/" + roomId, msg);
-        }
+        // ✅ Lưu peer state với username
+        roomStateService.upsertPeerState(
+                request.getRoomId(),
+                response.getPeerId(),
+                request.getUsername(),
+                true,  // mic default on
+                true   // cam default on
+        );
+
+        // Trả về kèm username
+        response.setUsername(request.getUsername());
+
+        log.info("✅ Created peer: peerId={}, username={}, roomId={}",
+                response.getPeerId(), request.getUsername(), request.getRoomId());
 
         return ResponseEntity.ok(response);
     }
-
     @PostMapping("/{peerId}/answer")
     public ResponseEntity<SimpleStatusResponse> setAnswer(@PathVariable String peerId, @RequestBody SetAnswerRequest body) {
         SimpleStatusResponse response = sfuClient.setAnswer(peerId, body);

@@ -12,6 +12,7 @@ export const API_ENDPOINTS = {
   REFRESH: `${API_BASE_URL}/refresh`,
   WEBSOCKET: `${API_BASE_URL}/websocket`,
   PEER_CREATE: `${API_BASE_URL}/api/peer/create`,
+  PEER_CREATE_WITH_USERNAME: `${API_BASE_URL}/api/peer/create-with-username`,
   PEER_DELETE: (peerId: string) => `${API_BASE_URL}/api/peer/${peerId}`,
   PEER_ANSWER: (peerId: string) => `${API_BASE_URL}/api/peer/${peerId}/answer`,
   PEER_CANDIDATE: (peerId: string) =>

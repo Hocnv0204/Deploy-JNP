@@ -1,60 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-// Local <video> element is used to show the camera via ref
-import JoinNotification from "../components/JoinNotification";
 import ChatPanel from "../components/ChatPanel";
 import ParticipantsList from "../components/ParticipantsList";
 import { WebRTCManager } from "../services/webrtcManager";
 import { useParams } from "react-router-dom";
-import { WS_ENDPOINTS, API_ENDPOINTS } from "../utils/constants";
-// Component để hiển thị remote video - giống Google Meet
-function RemoteVideo({
-  peerId,
-  stream,
-  name,
-  isMuted,
-}: {
-  peerId: string;
-  stream: MediaStream;
-  name?: string;
-  isMuted?: boolean;
-}) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    if (videoRef.current && videoRef.current.srcObject !== stream) {
-      videoRef.current.srcObject = stream;
-      videoRef.current.play().catch(console.error);
-    }
-  }, [stream]);
-
-  return (
-    <div className="relative w-full aspect-square group">
-      <div className="bg-gray-800 rounded-xl overflow-hidden border border-gray-700/50 w-full h-full shadow-lg hover:shadow-xl hover:border-gray-600/60 transition-all duration-200">
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          className="w-full h-full object-cover"
-        />
-      </div>
-      {/* Tên người ở bottom-left */}
-      <div className="absolute bottom-2 left-2 bg-black/75 backdrop-blur-sm px-2.5 py-1 rounded-md text-[11px] text-white font-medium shadow-md max-w-[calc(100%-1rem)] truncate">
-        {name || `Peer ${peerId.substring(0, 8)}`}
-      </div>
-      {/* Mic indicator ở top-right */}
-      <div className="absolute top-2 right-2">
-        <div
-          className={`bg-black/65 backdrop-blur-sm p-1.5 rounded-full shadow-md ${
-            isMuted ? "text-red-400" : "text-green-400"
-          }`}
-        >
-          <span className="text-xs">{isMuted ? "🔇" : "🎤"}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { WS_ENDPOINTS } from "../utils/constants";
 
 interface Participant {
   id: string;
@@ -69,7 +19,7 @@ interface CurrentUser {
 }
 
 interface RemoteStream {
-  peerId: string;
+  username: string; // ✅ Bây giờ chứa username thay vì peerId
   stream: MediaStream;
 }
 
@@ -82,8 +32,6 @@ export default function RoomPage() {
   const [isVideoOn, setIsVideoOn] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
-  const [showJoinNotification, setShowJoinNotification] = useState(true);
-  const [joinRequestName, setJoinRequestName] = useState("Nguyễn Văn A");
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [callDuration, setCallDuration] = useState(0);
   const { roomId } = useParams();
@@ -102,40 +50,72 @@ export default function RoomPage() {
       userId: currentUser.username,
 
       // Khi nhận remote stream (từ người khác)
-      onRemoteStreamAdded: (stream, peerId) => {
+      // ✅ Tham số thứ 2 bây giờ là username thay vì peerId
+      onRemoteStreamAdded: (stream, username) => {
         const streamId = stream.id;
         console.log(
-          `📹 [RoomPage] Remote stream from peer ${peerId}, streamId: ${streamId}`
+          `📹 [RoomPage] ========== REMOTE STREAM ADDED ==========`
+        );
+        console.log(
+          `📹 [RoomPage] Username: ${username}, Stream ID: ${streamId}`
+        );
+        console.log(
+          `📹 [RoomPage] Stream tracks: ${stream.getTracks().length} (${stream.getAudioTracks().length} audio, ${stream.getVideoTracks().length} video)`
         );
 
-        // 🔥 FIX: Kiểm tra duplicate dựa trên stream.id thực tế
+        // ✅ BẢO VỆ: Kiểm tra duplicate TRƯỚC KHI thêm vào state
         setRemoteStreams((prev) => {
-          // Kiểm tra xem stream.id đã tồn tại chưa
-          const existingEntry = Array.from(prev.values()).find(
-            (entry) => entry.stream.id === streamId
-          );
-
-          if (existingEntry) {
-            console.log(
-              `⚠️ [RoomPage] Stream ${streamId} already exists, skipping duplicate`
+          // ✅ Guard 1: Kiểm tra xem stream.id đã tồn tại trong Map chưa
+          if (prev.has(streamId)) {
+            console.warn(
+              `⚠️ [RoomPage] Stream ${streamId} already exists in Map - SKIPPING duplicate`
             );
             return prev; // Không thêm duplicate
           }
 
-          // Stream mới, thêm vào Map
+          // ✅ Guard 2: Kiểm tra xem stream object đã tồn tại chưa (double check)
+          const existingByStream = Array.from(prev.values()).find(
+            (entry) => entry.stream === stream || entry.stream.id === streamId
+          );
+
+          if (existingByStream) {
+            console.warn(
+              `⚠️ [RoomPage] Stream object already exists - SKIPPING duplicate`
+            );
+            console.warn(
+              `⚠️ [RoomPage] Existing: ${existingByStream.username}, New: ${username}`
+            );
+            return prev; // Không thêm duplicate
+          }
+
+          // ✅ Guard 3: Validate stream có tracks hợp lệ
+          if (!stream || stream.getTracks().length === 0) {
+            console.warn(
+              `⚠️ [RoomPage] Stream has no tracks - SKIPPING invalid stream`
+            );
+            return prev;
+          }
+
+          // ✅ Tất cả checks đều pass - thêm stream mới
           console.log(
-            `✅ [RoomPage] Adding NEW stream ${streamId} for peer ${peerId}`
+            `✅ [RoomPage] Adding NEW stream: streamId=${streamId}, username=${username}`
           );
           const newMap = new Map(prev);
-          newMap.set(streamId, { peerId, stream }); // 🔥 Dùng streamId làm key
+          newMap.set(streamId, { username, stream });
+          console.log(
+            `✅ [RoomPage] Total remote streams: ${newMap.size}`
+          );
+          console.log(
+            `📹 [RoomPage] ==========================================`
+          );
           return newMap;
         });
       },
-      onRemoteStreamRemoved: (peerId) => {
-        console.log("📹 Remote stream removed", peerId);
+      onRemoteStreamRemoved: (streamId) => {
+        console.log("📹 Remote stream removed", streamId);
         setRemoteStreams((prev) => {
           const newMap = new Map(prev);
-          newMap.delete(peerId);
+          newMap.delete(streamId);
           return newMap;
         });
       },
@@ -202,36 +182,14 @@ export default function RoomPage() {
     }
   }, [isVideoOn]);
 
-  // Tính toán grid layout dựa trên số lượng người (tối ưu hiển thị tất cả trên 1 màn hình)
-  const calculateGridLayout = (totalParticipants: number) => {
-    if (totalParticipants === 1) return "grid-cols-1";
-    if (totalParticipants === 2) return "grid-cols-2";
-    if (totalParticipants <= 4) return "grid-cols-2";
-    if (totalParticipants <= 9) return "grid-cols-3";
-    if (totalParticipants <= 12) return "grid-cols-4";
-    return "grid-cols-4"; // Giới hạn tối đa 4 cột
-  };
-
   // Lấy danh sách remote streams để hiển thị (giới hạn MAX_DISPLAY_PARTICIPANTS)
   const displayStreams = Array.from(remoteStreams.values()).slice(
     0,
     MAX_DISPLAY_PARTICIPANTS - 1
   );
   const totalParticipants = 1 + displayStreams.length; // 1 local + remote streams
-  const gridCols = calculateGridLayout(totalParticipants);
 
-  // Helper để map peerId với participant name
-  const getParticipantName = (peerId: string): string => {
-    // Tìm trong participants list hoặc dùng placeholder
-    const participant = participants.find((p) => p.id === peerId);
-    if (participant) return participant.name;
-
-    // Fallback: dùng tên từ danh sách participants nếu có
-    const randomIndex = peerId.charCodeAt(0) % participants.length;
-    return participants[randomIndex]?.name || `Peer ${peerId.substring(0, 8)}`;
-  };
-
-  // Check user login and initialize participants
+  // Check user login
   useEffect(() => {
     const user = localStorage.getItem("currentUser");
     if (!user) {
@@ -241,13 +199,9 @@ export default function RoomPage() {
     const userData = JSON.parse(user) as CurrentUser;
     setCurrentUser(userData);
 
-    // Get current room info
-
-    // Initialize participants with current user
+    // Initialize participants with current user only
     setParticipants([
-      { id: "1", name: userData.fullName, isActive: true },
-      { id: "2", name: "Nguyễn Văn B", isActive: true },
-      { id: "3", name: "Trần Thị C", isActive: false },
+      { id: userData.username, name: userData.fullName, isActive: true },
     ]);
   }, [navigate]);
 
@@ -272,20 +226,6 @@ export default function RoomPage() {
     return `${minutes}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const handleAcceptJoin = () => {
-    setParticipants([
-      ...participants,
-      { id: Date.now().toString(), name: joinRequestName, isActive: true },
-    ]);
-    // Simulate next join request after 10 seconds
-    setTimeout(() => {
-      const names = ["Phạm Minh D", "Lê Quốc E", "Hoàng Kim F"];
-      const randomName = names[Math.floor(Math.random() * names.length)];
-      setJoinRequestName(randomName);
-      setShowJoinNotification(true);
-    }, 10000);
-  };
-
   // Toggle audio via manager when user clicks mic
   const toggleMute = () => {
     const newMuted = !isMuted;
@@ -299,10 +239,6 @@ export default function RoomPage() {
     const newVideoOn = !isVideoOn;
     setIsVideoOn(newVideoOn);
     managerRef.current?.toggleVideo(newVideoOn);
-  };
-
-  const handleRejectJoin = () => {
-    console.log(`Rejected ${joinRequestName}`);
   };
 
   const handleEndCall = () => {
@@ -333,12 +269,6 @@ export default function RoomPage() {
               <span>⏱️</span>
               <span>{formatDuration(callDuration)}</span>
             </div>
-            {roomId?.isHost && (
-              <div className="bg-green-900/30 border border-green-700/40 px-3 py-1.5 rounded-lg text-xs text-green-300 font-medium flex items-center gap-1.5">
-                <span>🔐</span>
-                <span>Mã: {roomId}</span>
-              </div>
-            )}
           </div>
         </div>
 
@@ -389,8 +319,8 @@ export default function RoomPage() {
           </div>
 
           {/* ✅ REMOTE VIDEOS - TỰ THU NHỎ + HÌNH VUÔNG */}
-          {displayStreams.map(({ peerId, stream }) => (
-            <div key={peerId} className="relative aspect-square">
+          {displayStreams.map(({ username, stream }, index) => (
+            <div key={`${username}-${index}`} className="relative aspect-square">
               <div className="bg-gray-800 rounded-xl overflow-hidden border border-gray-700/40 w-full h-full shadow-lg">
                 <video
                   autoPlay
@@ -406,7 +336,7 @@ export default function RoomPage() {
               </div>
 
               <div className="absolute bottom-2 left-2 bg-black/70 px-2 py-1 rounded-md text-[10px] font-medium">
-                {getParticipantName(peerId)}
+                {username}
               </div>
             </div>
           ))}
@@ -482,12 +412,6 @@ export default function RoomPage() {
       </main>
 
       {/* PANELS */}
-      <JoinNotification
-        visible={showJoinNotification}
-        userName={joinRequestName}
-        onAccept={handleAcceptJoin}
-        onReject={handleRejectJoin}
-      />
       <ChatPanel
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}

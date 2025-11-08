@@ -64,6 +64,29 @@ export const isAuthenticated = (): boolean => {
 };
 
 /**
+ * Decode JWT token and extract username
+ */
+export const getUsernameFromToken = (): string | null => {
+  const token = getAccessToken();
+  if (!token) return null;
+
+  try {
+    // JWT format: header.payload.signature
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+
+    // Decode base64 payload
+    const decodedPayload = JSON.parse(atob(payload));
+    
+    // Extract username from payload (thường là "sub" hoặc "username")
+    return decodedPayload.sub || decodedPayload.username || null;
+  } catch (error) {
+    console.error("Error decoding token:", error);
+    return null;
+  }
+};
+
+/**
  * Login API call
  */
 export const login = async (

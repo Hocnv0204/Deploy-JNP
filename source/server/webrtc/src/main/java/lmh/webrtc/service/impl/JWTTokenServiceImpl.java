@@ -17,7 +17,7 @@ import java.util.Map;
 @Service
 public class JWTTokenServiceImpl implements JWTTokenService {
 
-    @Value("${security.jwt.secret:secret-key}")
+    @Value("${spring.security.jwt.secret}")
     private String secret;
 
     @Value("${security.jwt.access-exp-seconds:3600}")
@@ -27,10 +27,10 @@ public class JWTTokenServiceImpl implements JWTTokenService {
     private long refreshExpSeconds;
 
     private SecretKey getSigningKey() {
-        byte[] keyBytes = secret.getBytes();
-        // If configured as Base64, we could use Decoders.BASE64.decode(secret)
-        return Keys.hmacShaKeyFor(keyBytes);
+        return Keys.hmacShaKeyFor(secret.getBytes());
     }
+
+
 
     @Override
     public String generateAccessToken(UserDetails userDetails, Map<String, Object> claims) {

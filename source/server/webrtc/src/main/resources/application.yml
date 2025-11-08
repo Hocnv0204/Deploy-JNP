@@ -1,6 +1,9 @@
 spring:
   application:
     name: webrtc
+  security:
+    jwt:
+      secret: "kIx7TQ5yKpVtxgpI4KQ9zJxEwl8VVWH8KR9aQn8bE3o="
 
   datasource:
     url: jdbc:postgresql://localhost:5432/webrtc
