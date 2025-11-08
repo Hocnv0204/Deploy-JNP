@@ -6,4 +6,10 @@ export default defineConfig({
   define: {
     global: {},
   },
+  server: {
+    historyApiFallback: true,
+  },
+  preview: {
+    historyApiFallback: true,
+  },
 });
