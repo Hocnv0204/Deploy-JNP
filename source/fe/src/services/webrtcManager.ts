@@ -67,7 +67,10 @@ export class WebRTCManager {
 
       // Nếu BE dùng withSockJS() ở endpoint "/websocket", khi dùng WebSocket thuần
       // cần nối thêm "/websocket" vào cuối để thành đường dẫn native WS
-      const wsUrl = this.config.signalingUrl.replace(/^http/, "ws");
+      const wsBase = this.config.signalingUrl.replace(/^http/, "ws");
+      const wsUrl = wsBase.endsWith("/websocket")
+        ? `${wsBase}/websocket`
+        : `${wsBase}`;
       console.log("[STOMP] 🌐 WebSocket URL:", wsUrl);
 
       this.stompClient = new StompClient({
