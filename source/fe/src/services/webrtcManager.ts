@@ -10,7 +10,7 @@ export interface WebRTCConfig {
   signalingUrl: string;
   roomId: string;
   userId: string;
-  apiBaseUrl?: string; 
+  apiBaseUrl?: string;
   onRemoteStreamAdded?: (stream: MediaStream, peerId: string) => void;
   onRemoteStreamRemoved?: (peerId: string) => void;
   onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
@@ -39,10 +39,10 @@ export class WebRTCManager {
 
   // 🔥 FIX: Track remote streams để tránh duplicate
   private remoteStreams: Map<string, MediaStream> = new Map();
-  
+
   // ✅ Map peerId -> username để hiển thị tên người dùng
   private peerUsernames: Map<string, string> = new Map();
-  
+
   // ✅ Track current source peer ID để biết track từ peer nào
   private currentSourcePeerId: string | null = null;
 
@@ -67,11 +67,7 @@ export class WebRTCManager {
 
       // Nếu BE dùng withSockJS() ở endpoint "/websocket", khi dùng WebSocket thuần
       // cần nối thêm "/websocket" vào cuối để thành đường dẫn native WS
-      const wsBase = this.config.signalingUrl.replace(/^http/, "ws");
-      const wsUrl = wsBase.endsWith("/websocket")
-        ? `${wsBase}/websocket`
-        : `${wsBase}`;
-
+      const wsUrl = this.config.signalingUrl.replace(/^http/, "ws");
       console.log("[STOMP] 🌐 WebSocket URL:", wsUrl);
 
       this.stompClient = new StompClient({
@@ -138,11 +134,11 @@ export class WebRTCManager {
     console.log(`[API] 📤 Creating peer: ${createUrl}`);
     const token = getAccessToken();
     const username = getUsernameFromToken();
-    
+
     if (!username) {
       throw new Error("Username not found in token");
     }
-    
+
     const res = await fetch(createUrl, {
       method: "POST",
       headers: {
@@ -165,7 +161,7 @@ export class WebRTCManager {
     };
 
     console.log("✅ Peer created with username:", data.username);
-    
+
     // ✅ Lưu map peerId -> username
     this.peerUsernames.set(data.peerId, data.username);
 
@@ -200,7 +196,7 @@ export class WebRTCManager {
               console.log(`[WebRTC] ✅ Added ${track.kind} track to PC`, {
                 trackId: track.id,
                 enabled: track.enabled,
-                label: track.label
+                label: track.label,
               });
               this.pc.addTrack(track, this.localStream);
             }
@@ -214,10 +210,12 @@ export class WebRTCManager {
       }
 
       // đặt remote offer
-      console.log(`[WebRTC] 📥 Setting remote offer from SFU for peer: ${peerId}`);
+      console.log(
+        `[WebRTC] 📥 Setting remote offer from SFU for peer: ${peerId}`
+      );
       await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
       console.log(`[WebRTC] ✅ Remote offer set successfully`);
-      
+
       // tạo answer
       console.log(`[WebRTC] 🔧 Creating answer for peer: ${peerId}`);
       const answer = await this.pc.createAnswer();
@@ -262,7 +260,7 @@ export class WebRTCManager {
   ): Promise<void> {
     console.log(`[WebRTC] 📨 Handling offer from SFU for peer: ${peerId}`);
     console.log(`[WebRTC] Offer SDP: ${offer.sdp?.substring(0, 100)}...`);
-    
+
     // Lưu sourcePeerId để dùng trong ontrack handler
     if (sourcePeerId) {
       this.currentSourcePeerId = sourcePeerId;
@@ -299,7 +297,7 @@ export class WebRTCManager {
       console.log("[WebRTC] 🔧 Setting remote description (offer)");
       await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
       console.log("[WebRTC] ✅ Remote description set");
-      
+
       // 2. Tạo Answer
       console.log("[WebRTC] 🔧 Creating answer");
       const answer = await this.pc.createAnswer();
@@ -331,7 +329,7 @@ export class WebRTCManager {
   private async handleRemoteCandidate(candidateData: any): Promise<void> {
     const peerId = this.peerId || "unknown";
     const username = this.peerUsernames.get(peerId) || peerId;
-    
+
     console.log("[ICE] 📨 ========== RECEIVED REMOTE ICE CANDIDATE ==========");
     console.log(`[ICE] 📨 From Peer: ${peerId} (${username})`);
     console.log("[ICE] 📨 Raw candidate data:", candidateData);
@@ -462,30 +460,36 @@ export class WebRTCManager {
 
           switch (clientMessage.event) {
             case "sfu-offer": {
-              console.log("📩 ========== RECEIVED SFU-OFFER MESSAGE ==========");
+              console.log(
+                "📩 ========== RECEIVED SFU-OFFER MESSAGE =========="
+              );
               console.log("📩 Raw data:", clientMessage.data);
 
               const dataObj = clientMessage.data as any;
-              
+
               // ✅ FIX 1: Trích xuất thông tin NGAY LẬP TỨC
               const sourceUsername = dataObj.sourceUsername;
               const sourcePeerId = dataObj.sourcePeerId;
-              
-              console.log(`📩 Source Peer ID: ${sourcePeerId || 'N/A'}`);
-              console.log(`📩 Source Username: ${sourceUsername || 'N/A'}`);
-              
+
+              console.log(`📩 Source Peer ID: ${sourcePeerId || "N/A"}`);
+              console.log(`📩 Source Username: ${sourceUsername || "N/A"}`);
+
               // ✅ FIX 2: LƯU MAPPING TRƯỚC KHI XỬ LÝ OFFER
               // Đây là bước QUAN TRỌNG NHẤT
               if (sourceUsername && sourcePeerId) {
                 this.peerUsernames.set(sourcePeerId, sourceUsername);
                 this.currentSourcePeerId = sourcePeerId;
-                console.log(`✅ Saved mapping BEFORE handling offer: ${sourcePeerId} -> ${sourceUsername}`);
+                console.log(
+                  `✅ Saved mapping BEFORE handling offer: ${sourcePeerId} -> ${sourceUsername}`
+                );
               } else if (sourceUsername) {
                 // Fallback: dùng username làm key nếu không có sourcePeerId
                 const fallbackKey = `peer_${sourceUsername}`;
                 this.peerUsernames.set(fallbackKey, sourceUsername);
                 this.currentSourcePeerId = fallbackKey;
-                console.log(`✅ Saved fallback mapping: ${fallbackKey} -> ${sourceUsername}`);
+                console.log(
+                  `✅ Saved fallback mapping: ${fallbackKey} -> ${sourceUsername}`
+                );
               } else {
                 console.warn(`⚠️ No source info - tracks will be anonymous`);
                 this.currentSourcePeerId = null;
@@ -508,14 +512,22 @@ export class WebRTCManager {
               // ✅ FIX 4: Gọi handleOfferFromSFU SAU KHI đã lưu mapping
               if (offer && offer.type === "offer" && offer.sdp) {
                 console.log(`📩 Calling handleOfferFromSFU...`);
-                console.log(`📩 Username mapping already saved: ${this.currentSourcePeerId} -> ${this.peerUsernames.get(this.currentSourcePeerId || '')}`);
+                console.log(
+                  `📩 Username mapping already saved: ${
+                    this.currentSourcePeerId
+                  } -> ${this.peerUsernames.get(
+                    this.currentSourcePeerId || ""
+                  )}`
+                );
                 await this.handleOfferFromSFU(peerId, offer, sourcePeerId);
                 console.log("✅ handleOfferFromSFU completed");
               } else {
                 console.error("[STOMP] ❌ Invalid offer");
               }
-              
-              console.log("📩 ================================================");
+
+              console.log(
+                "📩 ================================================"
+              );
               break;
             }
 
@@ -607,40 +619,51 @@ export class WebRTCManager {
     // 🔥 FIX: Xử lý khi nhận được remote track - tránh duplicate streams
     this.pc.ontrack = (event: RTCTrackEvent) => {
       const trackKind = event.track.kind;
-      
+
       // ✅ Lấy sourcePeerId từ currentSourcePeerId
       const sourcePeerId = this.currentSourcePeerId || "unknown";
-      
+
       console.log(`[WebRTC] 📹 ========== RECEIVED REMOTE TRACK ==========`);
       console.log(`[WebRTC] 📹 Track Type: ${trackKind.toUpperCase()}`);
       console.log(`[WebRTC] 📹 Current Source Peer ID: ${sourcePeerId}`);
-      console.log(`[WebRTC] 📹 Usernames Map:`, Array.from(this.peerUsernames.entries()));
+      console.log(
+        `[WebRTC] 📹 Usernames Map:`,
+        Array.from(this.peerUsernames.entries())
+      );
 
       // ✅ Lookup username với nhiều fallback strategies
       let sourceUsername = this.peerUsernames.get(sourcePeerId);
-      
+
       if (!sourceUsername) {
-        console.warn(`[WebRTC] ⚠️ Username not found for peerId: ${sourcePeerId}`);
-        
+        console.warn(
+          `[WebRTC] ⚠️ Username not found for peerId: ${sourcePeerId}`
+        );
+
         // Strategy 1: Tìm trong map bằng partial match
         for (const [key, value] of this.peerUsernames.entries()) {
           if (key.includes(sourcePeerId) || sourcePeerId.includes(key)) {
             sourceUsername = value;
-            console.log(`[WebRTC] 📹 Found via partial match: ${key} -> ${value}`);
+            console.log(
+              `[WebRTC] 📹 Found via partial match: ${key} -> ${value}`
+            );
             break;
           }
         }
-        
+
         // Strategy 2: Nếu chỉ có 1 peer khác, dùng nó
         if (!sourceUsername && this.peerUsernames.size === 1) {
           sourceUsername = Array.from(this.peerUsernames.values())[0];
-          console.log(`[WebRTC] 📹 Using only available peer: ${sourceUsername}`);
+          console.log(
+            `[WebRTC] 📹 Using only available peer: ${sourceUsername}`
+          );
         }
-        
+
         // Strategy 3: Generate fallback username
         if (!sourceUsername) {
           sourceUsername = `User-${sourcePeerId.substring(0, 8)}`;
-          console.log(`[WebRTC] 📹 Generated fallback username: ${sourceUsername}`);
+          console.log(
+            `[WebRTC] 📹 Generated fallback username: ${sourceUsername}`
+          );
         }
       } else {
         console.log(`[WebRTC] 📹 ✅ Found username in map: ${sourceUsername}`);
@@ -655,7 +678,9 @@ export class WebRTCManager {
 
         // ✅ Duplicate protection
         if (this.remoteStreams.has(streamId)) {
-          console.log(`[WebRTC] ⚠️ Stream ${streamId} already exists - SKIPPING`);
+          console.log(
+            `[WebRTC] ⚠️ Stream ${streamId} already exists - SKIPPING`
+          );
           return;
         }
 
@@ -665,11 +690,15 @@ export class WebRTCManager {
         }
 
         // ✅ Add stream và notify UI
-        console.log(`[WebRTC] 🆕 Adding NEW stream with username: ${sourceUsername}`);
+        console.log(
+          `[WebRTC] 🆕 Adding NEW stream with username: ${sourceUsername}`
+        );
         this.remoteStreams.set(streamId, stream);
         this.config.onRemoteStreamAdded?.(stream, sourceUsername);
-        
-        console.log(`[WebRTC] ✅ Total remote streams: ${this.remoteStreams.size}`);
+
+        console.log(
+          `[WebRTC] ✅ Total remote streams: ${this.remoteStreams.size}`
+        );
       }
       console.log(`[WebRTC] 📹 ============================================`);
     };
@@ -680,14 +709,16 @@ export class WebRTCManager {
         const candidate = event.candidate;
         const peerId = this.peerId || "unknown";
         const username = this.peerUsernames.get(peerId) || peerId;
-        
-        console.log("[ICE] 🧊 ========== LOCAL ICE CANDIDATE GENERATED ==========");
+
+        console.log(
+          "[ICE] 🧊 ========== LOCAL ICE CANDIDATE GENERATED =========="
+        );
         console.log(`[ICE] 🧊 Peer: ${peerId} (${username})`);
         console.log("[ICE] 🧊 Candidate Type:", candidate.type || "unknown");
         console.log("[ICE] 🧊 Candidate:", candidate.candidate);
         console.log("[ICE] 🧊 SDP Mid:", candidate.sdpMid);
         console.log("[ICE] 🧊 SDP MLine Index:", candidate.sdpMLineIndex);
-        
+
         if (this.peerId && this.apiBaseUrl) {
           console.log("[ICE] 🧊 📤 Sending candidate to SFU via API...");
           // Gọi async method nhưng không await (fire and forget)
@@ -699,11 +730,17 @@ export class WebRTCManager {
             "[ICE] ⚠️ Cannot send candidate: peerId or apiBaseUrl missing"
           );
         }
-        console.log("[ICE] 🧊 ================================================");
+        console.log(
+          "[ICE] 🧊 ================================================"
+        );
       } else {
-        console.log("[ICE] ✅ ========== ALL ICE CANDIDATES GATHERED ==========");
+        console.log(
+          "[ICE] ✅ ========== ALL ICE CANDIDATES GATHERED =========="
+        );
         console.log("[ICE] ✅ ICE gathering complete - ready for connection");
-        console.log("[ICE] ✅ ================================================");
+        console.log(
+          "[ICE] ✅ ================================================"
+        );
       }
     };
 
@@ -712,13 +749,11 @@ export class WebRTCManager {
       const state = this.pc?.connectionState;
       const peerId = this.peerId || "unknown";
       const username = this.peerUsernames.get(peerId) || peerId;
-      
-      console.log(
-        `[WebRTC] 🔌 ========== CONNECTION STATE CHANGED ==========`
-      );
+
+      console.log(`[WebRTC] 🔌 ========== CONNECTION STATE CHANGED ==========`);
       console.log(`[WebRTC] 🔌 Peer: ${peerId} (${username})`);
       console.log(`[WebRTC] 🔌 New State: ${state?.toUpperCase()}`);
-      
+
       switch (state) {
         case "connecting":
           console.log(`[WebRTC] 🔌 ⏳ Connecting to peer...`);
@@ -737,10 +772,8 @@ export class WebRTCManager {
           console.log(`[WebRTC] 🔌 🚪 Connection closed`);
           break;
       }
-      console.log(
-        `[WebRTC] 🔌 =======================================`
-      );
-      
+      console.log(`[WebRTC] 🔌 =======================================`);
+
       if (this.pc?.connectionState) {
         this.config.onConnectionStateChange?.(this.pc.connectionState);
       }
@@ -750,19 +783,21 @@ export class WebRTCManager {
       const state = this.pc?.iceConnectionState;
       const peerId = this.peerId || "unknown";
       const username = this.peerUsernames.get(peerId) || peerId;
-      
+
       console.log(
         `[WebRTC] 🧊 ========== ICE CONNECTION STATE CHANGED ==========`
       );
       console.log(`[WebRTC] 🧊 Peer: ${peerId} (${username})`);
       console.log(`[WebRTC] 🧊 New State: ${state?.toUpperCase()}`);
-      
+
       switch (state) {
         case "checking":
           console.log(`[WebRTC] 🧊 ⏳ Checking ICE connectivity...`);
           break;
         case "connected":
-          console.log(`[WebRTC] 🧊 ✅ ICE CONNECTED! Direct connection established!`);
+          console.log(
+            `[WebRTC] 🧊 ✅ ICE CONNECTED! Direct connection established!`
+          );
           break;
         case "completed":
           console.log(`[WebRTC] 🧊 ✅ ICE COMPLETED! All checks done!`);
@@ -780,7 +815,7 @@ export class WebRTCManager {
       console.log(
         `[WebRTC] 🧊 =================================================`
       );
-      
+
       if (this.pc?.iceConnectionState) {
         this.config.onIceConnectionStateChange?.(this.pc.iceConnectionState);
       }
