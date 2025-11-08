@@ -3,7 +3,7 @@
  */
 
 // API Base URL
-export const API_BASE_URL = "https://api-lmh-writting-practice.id.vn/";
+export const API_BASE_URL = "https://api-lmh-writting-practice.id.vn";
 
 // API Endpoints
 export const API_ENDPOINTS = {
