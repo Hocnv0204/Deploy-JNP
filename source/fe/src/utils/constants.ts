@@ -3,7 +3,7 @@
  */
 
 // API Base URL
-export const API_BASE_URL = "http://localhost:8081";
+export const API_BASE_URL = "http://54.252.67.70:8081";
 
 // API Endpoints
 export const API_ENDPOINTS = {

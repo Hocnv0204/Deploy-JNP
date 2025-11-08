@@ -142,9 +142,3 @@ export class SignalingClient {
     this.alive = false;
   }
 }
-
-// ======= Cách dùng mẫu =======
-// const signaling = new SignalingClient("ws://localhost:8080/ws");
-// await signaling.connect();
-// signaling.on("message", (msg) => console.log(msg));
-// signaling.safeSend({ event: "join-room", roomId: "room123", username: "hocnv" });

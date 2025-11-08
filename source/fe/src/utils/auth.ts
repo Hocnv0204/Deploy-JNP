@@ -3,8 +3,7 @@
  * Handle token storage, retrieval, and API authentication
  */
 
-const API_BASE_URL = "http://localhost:8081";
-
+import { API_BASE_URL } from "./constants"; 
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-
+import { API_BASE_URL } from "../utils/constants";
 interface LoginFormData {
   username: string;
   password: string;
@@ -50,7 +50,7 @@ export default function LoginPage() {
       }
 
       // 🔥 Call backend API
-      const response = await fetch("http://localhost:8081/login", {
+      const response = await fetch(`${API_BASE_URL}/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

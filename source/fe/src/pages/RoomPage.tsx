@@ -4,7 +4,7 @@ import ChatPanel from "../components/ChatPanel";
 import ParticipantsList from "../components/ParticipantsList";
 import { WebRTCManager } from "../services/webrtcManager";
 import { useParams } from "react-router-dom";
-import { WS_ENDPOINTS } from "../utils/constants";
+import { API_BASE_URL, WS_ENDPOINTS } from "../utils/constants";
 
 interface Participant {
   id: string;
@@ -50,7 +50,6 @@ export default function RoomPage() {
       userId: currentUser.username,
 
       // Khi nhận remote stream (từ người khác)
-      // ✅ Tham số thứ 2 bây giờ là username thay vì peerId
       onRemoteStreamAdded: (stream, username) => {
         const streamId = stream.id;
         console.log(
@@ -148,9 +147,9 @@ export default function RoomPage() {
         }
 
         // REST API flow – create peer, receive offer, send answer
-        const webhookUrl = "http://localhost:8081/sfu-webhook";
+        const webhookUrl = `${API_BASE_URL}/sfu-webhook`;
         console.log("[RoomPage] 🌐 Creating peer via API...");
-        await manager.joinRoomViaApi("http://localhost:8081", webhookUrl);
+        await manager.joinRoomViaApi(API_BASE_URL, webhookUrl);
       } catch (error) {
         console.error("[RoomPage] ❌ Error initializing:", error);
       }

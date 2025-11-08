@@ -4,12 +4,13 @@
  */
 import { Client as StompClient } from "@stomp/stompjs";
 import { getAccessToken, getUsernameFromToken } from "../utils/auth";
+import { API_BASE_URL } from "../utils/constants";
 export interface WebRTCConfig {
   iceServers?: RTCIceServer[];
   signalingUrl: string;
   roomId: string;
   userId: string;
-  apiBaseUrl?: string; // ví dụ: http://localhost:8081
+  apiBaseUrl?: string; 
   onRemoteStreamAdded?: (stream: MediaStream, peerId: string) => void;
   onRemoteStreamRemoved?: (peerId: string) => void;
   onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
@@ -150,7 +151,7 @@ export class WebRTCManager {
       },
       body: JSON.stringify({
         roomId: this.config.roomId,
-        webhookUrl: webhookUrl || "http://localhost:8081/sfu-webhook",
+        webhookUrl: webhookUrl || `${API_BASE_URL}/sfu-webhook`,
         username: username,
       }),
     });

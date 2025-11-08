@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { API_BASE_URL } from "../utils/constants";
 
 interface SignUpFormData {
   username: string;
@@ -78,7 +79,7 @@ export default function SignUpPage() {
       }
 
       // 🔥 Call backend API
-      const response = await fetch("http://localhost:8081/register", {
+      const response = await fetch(`${API_BASE_URL}/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
