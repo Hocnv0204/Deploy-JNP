@@ -53,8 +53,8 @@ export class WebRTCManager {
         {
           urls: "turn:turn.anyfirewall.com:443?transport=tcp",
           username: "webrtc",
-          credential: "webrtc"
-        }
+          credential: "webrtc",
+        },
       ],
       ...config,
     };
@@ -775,9 +775,11 @@ export class WebRTCManager {
           console.log(`[WebRTC] 🔌 ⚠️ Disconnected from peer`);
           break;
         case "failed":
+          this.retryJoinRoom();
           console.log(`[WebRTC] 🔌 ❌ Connection FAILED`);
           break;
         case "closed":
+          this.retryJoinRoom();
           console.log(`[WebRTC] 🔌 🚪 Connection closed`);
           break;
       }
@@ -1024,5 +1026,26 @@ export class WebRTCManager {
         track.enabled = enabled;
       });
     }
+  }
+  private async retryJoinRoom(): Promise<void> {
+    console.warn("[WebRTC] 🔁 Retrying join-room to resync signaling...");
+
+    if (!this.stompClient?.connected) {
+      console.warn("[WebRTC] ⚠️ STOMP not connected — reconnecting...");
+      await this.connectStomp();
+    }
+
+    const payload = {
+      event: "join-room",
+      roomId: this.config.roomId,
+      userId: this.config.userId,
+    };
+
+    console.log("[WebRTC] 📡 Sending rejoin payload:", payload);
+
+    this.stompClient.publish({
+      destination: "/app/signaling", // 💡 Dùng lại endpoint join-room hiện có
+      body: JSON.stringify(payload),
+    });
   }
 }
