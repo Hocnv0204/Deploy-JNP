@@ -34,6 +34,7 @@ export default function RoomPage() {
   const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [callDuration, setCallDuration] = useState(0);
+  const [isConnecting, setIsConnecting] = useState(true); // ✅ State chờ kết nối
   const { roomId } = useParams();
 
   const [remoteStreams, setRemoteStreams] = useState<Map<string, RemoteStream>>(
@@ -43,11 +44,25 @@ export default function RoomPage() {
 
   useEffect(() => {
     if (!currentUser || !roomId) return;
+
+    // ✅ Timeout an toàn: tự động tắt loading sau 10 giây
+    const connectionTimeout = setTimeout(() => {
+      console.warn("⚠️ [RoomPage] Connection timeout - forcing ready state");
+      setIsConnecting(false);
+    }, 10000);
+
     // instantiate manager and keep a reference for control from UI handlers
     const manager = new WebRTCManager({
       signalingUrl: WS_ENDPOINTS.STOMP, // URL backend STOMP
       roomId: roomId,
       userId: currentUser.username,
+
+      // ✅ Callback khi kết nối đã sẵn sàng
+      onConnectionReady: () => {
+        console.log("🎉 [RoomPage] Connection ready! Hiding loading screen...");
+        clearTimeout(connectionTimeout);
+        setIsConnecting(false);
+      },
 
       // Khi nhận remote stream (từ người khác)
       onRemoteStreamAdded: (stream, username) => {
@@ -157,6 +172,7 @@ export default function RoomPage() {
 
     return () => {
       // Cleanup
+      clearTimeout(connectionTimeout);
       try {
         manager.leaveRoom();
       } catch (e) {
@@ -251,6 +267,59 @@ export default function RoomPage() {
     return (
       <div className="w-full min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-white">Đang tải...</div>
+      </div>
+    );
+  }
+
+  // ✅ Màn hình chờ kết nối
+  if (isConnecting) {
+    return (
+      <div className="w-full min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex flex-col items-center justify-center">
+        <div className="bg-gray-800/50 backdrop-blur-lg border border-gray-700 rounded-2xl p-12 max-w-md w-full mx-4">
+          {/* Icon Animation */}
+          <div className="flex justify-center mb-8">
+            <div className="relative">
+              <div className="w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center animate-pulse">
+                <span className="text-5xl">🔗</span>
+              </div>
+              <div className="absolute inset-0 w-24 h-24 bg-blue-600/30 rounded-full animate-ping"></div>
+            </div>
+          </div>
+
+          {/* Title */}
+          <h2 className="text-3xl font-bold text-white text-center mb-4">
+            Đang kết nối...
+          </h2>
+
+          {/* Description */}
+          <p className="text-gray-300 text-center mb-6">
+            Đang thiết lập kết nối với các thiết bị khác
+          </p>
+
+          {/* Loading Progress */}
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-sm text-gray-300">Kết nối WebSocket</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+              <span className="text-sm text-gray-300">Trao đổi ICE candidates</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              <span className="text-sm text-gray-300">Đang kết nối với peer...</span>
+            </div>
+          </div>
+
+          {/* Room Info */}
+          <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400 text-sm">Phòng:</span>
+              <span className="text-white font-semibold">{roomId}</span>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

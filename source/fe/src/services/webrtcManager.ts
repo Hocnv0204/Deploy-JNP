@@ -15,6 +15,7 @@ export interface WebRTCConfig {
   onRemoteStreamRemoved?: (peerId: string) => void;
   onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
   onIceConnectionStateChange?: (state: RTCIceConnectionState) => void;
+  onConnectionReady?: () => void; // ✅ Callback khi kết nối đã sẵn sàng
 }
 
 // Message format từ backend (ClientMessage)
@@ -767,6 +768,8 @@ export class WebRTCManager {
         case "connected":
           console.log(`[WebRTC] 🔌 ✅ CONNECTED! Peers are now connected!`);
           console.log(`[WebRTC] 🔌 ✅ Media can now flow between peers`);
+          // ✅ Trigger callback khi kết nối sẵn sàng
+          this.config.onConnectionReady?.();
           break;
         case "disconnected":
           console.log(`[WebRTC] 🔌 ⚠️ Disconnected from peer`);

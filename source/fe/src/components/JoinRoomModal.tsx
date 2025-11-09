@@ -13,9 +13,8 @@ export default function JoinRoomModal({
 }: JoinRoomModalProps) {
   const [roomCode, setRoomCode] = useState("");
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -25,31 +24,14 @@ export default function JoinRoomModal({
       return;
     }
 
-    if (roomCode.length < 5) {
-      setError("Mã phòng phải có ít nhất 5 ký tự");
+    if (roomCode.length < 3) {
+      setError("Mã phòng phải có ít nhất 3 ký tự");
       return;
     }
 
-    setIsLoading(true);
-
-    // Simulate API call to verify room code
-    setTimeout(() => {
-      // Get all rooms from localStorage
-      const rooms = JSON.parse(localStorage.getItem("meetingRooms") || "[]");
-      const room = rooms.find(
-        (r: { code: string }) => r.code.toLowerCase() === roomCode.toLowerCase()
-      );
-
-      if (!room) {
-        setError("Mã phòng không tồn tại. Vui lòng kiểm tra lại!");
-        setIsLoading(false);
-        return;
-      }
-
-      // Room found, submit
-      setIsLoading(false);
-      onSubmit(roomCode.toUpperCase());
-    }, 500);
+    // Submit mã phòng và navigate đến room
+    onSubmit(roomCode.toUpperCase());
+    setRoomCode(""); // Reset input
   };
 
   if (!isOpen) return null;
@@ -99,7 +81,6 @@ export default function JoinRoomModal({
                 }}
                 placeholder="VD: ROOM123"
                 className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all uppercase"
-                disabled={isLoading}
               />
             </div>
 
@@ -116,27 +97,16 @@ export default function JoinRoomModal({
               <button
                 type="button"
                 onClick={onClose}
-                disabled={isLoading}
-                className="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+                className="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
               >
                 Hủy
               </button>
               <button
                 type="submit"
-                disabled={isLoading}
-                className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
               >
-                {isLoading ? (
-                  <>
-                    <span className="inline-block animate-spin">⏳</span>
-                    Đang xác nhận...
-                  </>
-                ) : (
-                  <>
-                    <span>✓</span>
-                    <span>Tham Gia</span>
-                  </>
-                )}
+                <span>✓</span>
+                <span>Tham Gia</span>
               </button>
             </div>
           </form>
