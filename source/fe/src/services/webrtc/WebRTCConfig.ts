@@ -9,5 +9,5 @@ export interface WebRTCConfig {
     onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
     onIceConnectionStateChange?: (state: RTCIceConnectionState) => void;
     onConnectionReady?: () => void;
+    iceCandidatePoolSize?: number;
   }
-  

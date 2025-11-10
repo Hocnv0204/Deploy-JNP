@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { WebRTCManager } from "../services/webrtcManager";
+import { WebRTCManager } from "../services/webrtc/WebRTCManager";
 
 export interface UseWebRTCConfig {
   signalingUrl: string;
@@ -45,7 +45,7 @@ export function useWebRTC(config: UseWebRTCConfig) {
         signalingUrl: config.signalingUrl,
         roomId: config.roomId,
         userId: config.userId,
-        onRemoteStreamAdded: (stream, peerId) => {
+        onRemoteStreamAdded: (stream: MediaStream, peerId: string) => {
           console.log("[useWebRTC] Remote stream added:", peerId);
           setState((prev) => {
             const newRemoteStreams = new Map(prev.remoteStreams);
@@ -53,7 +53,7 @@ export function useWebRTC(config: UseWebRTCConfig) {
             return { ...prev, remoteStreams: newRemoteStreams };
           });
         },
-        onRemoteStreamRemoved: (peerId) => {
+        onRemoteStreamRemoved: (peerId: string) => {
           console.log("[useWebRTC] Remote stream removed:", peerId);
           setState((prev) => {
             const newRemoteStreams = new Map(prev.remoteStreams);
@@ -61,10 +61,10 @@ export function useWebRTC(config: UseWebRTCConfig) {
             return { ...prev, remoteStreams: newRemoteStreams };
           });
         },
-        onConnectionStateChange: (state) => {
+        onConnectionStateChange: (state: RTCPeerConnectionState) => {
           setState((prev) => ({ ...prev, connectionState: state }));
         },
-        onIceConnectionStateChange: (state) => {
+        onIceConnectionStateChange: (state: RTCIceConnectionState) => {
           setState((prev) => ({ ...prev, iceConnectionState: state }));
         },
       });

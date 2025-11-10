@@ -37,7 +37,7 @@ export class WebRTCManager {
   private iceHandler: IceHandler;
   private config: WebRTCConfig;
   private apiBaseUrl: string | null = null; // Lưu apiBaseUrl để dùng khi gửi candidate
-  private peerSubscription: any | null = null; // Subscription theo peerId để nhận event từ SFU
+  private peerSubscription: StompSubscription | null = null; // Subscription theo peerId để nhận event từ SFU
 
   // 🔥 FIX: Track remote streams để tránh duplicate
   private remoteStreams: Map<string, MediaStream> = new Map();
