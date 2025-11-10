@@ -11,7 +11,7 @@ import { PeerConnectionHandler } from "../connection/PeerConnectionHandler";
 import { getUsernameFromToken } from "../../utils/auth";
 import { API_BASE_URL } from "../../utils/constants";
 import type { WebRTCConfig } from "./WebRTCConfig";
-
+import type { StompSubscription } from "@stomp/stompjs";
 // Message format từ backend (ClientMessage)
 // Backend gửi message qua STOMP với format này khi có peer mới tham gia
 interface ClientMessage {
@@ -37,7 +37,7 @@ export class WebRTCManager {
   private iceHandler: IceHandler;
   private config: WebRTCConfig;
   private apiBaseUrl: string | null = null; // Lưu apiBaseUrl để dùng khi gửi candidate
-  private peerSubscription: StompSubscription | null = null; // Subscription theo peerId để nhận event từ SFU
+  private peerSubscription: any | null = null; // Subscription theo peerId để nhận event từ SFU
 
   // 🔥 FIX: Track remote streams để tránh duplicate
   private remoteStreams: Map<string, MediaStream> = new Map();
@@ -50,35 +50,35 @@ export class WebRTCManager {
 
   constructor(config: WebRTCConfig) {
     this.config = {
-        ...config, // ✅ Đặt trước, để cho phép bạn override nếu cần
-      
-        iceServers: [
-          // ✅ 1. STUN Google fallback
-          {
-            urls: [
-              "stun:stun1.l.google.com:19302",
-              "stun:stun2.l.google.com:19302",
-            ],
-          },
-          // ✅ 2. STUN Metered (ổn định và ít bị block)
-          { urls: "stun:stun.relay.metered.ca:80" },
-      
-          // ✅ 3. TURN server (bắt buộc cho NAT / mạng công ty)
-          {
-            urls: [
-              "turn:global.relay.metered.ca:80",
-              "turn:global.relay.metered.ca:80?transport=tcp",
-              "turn:global.relay.metered.ca:443",
-              "turns:global.relay.metered.ca:443?transport=tcp",
-            ],
-            username: "b25f13a908741ebc9b2a58c7",
-            credential: "flOn9NEcWNvD8clt",
-          },
-        ],
-      
-        // ✅ (Tùy chọn) dự trữ sẵn ICE candidate
-        iceCandidatePoolSize: 10,
-      };
+      ...config, // ✅ Đặt trước, để cho phép bạn override nếu cần
+
+      iceServers: [
+        // ✅ 1. STUN Google fallback
+        {
+          urls: [
+            "stun:stun1.l.google.com:19302",
+            "stun:stun2.l.google.com:19302",
+          ],
+        },
+        // ✅ 2. STUN Metered (ổn định và ít bị block)
+        { urls: "stun:stun.relay.metered.ca:80" },
+
+        // ✅ 3. TURN server (bắt buộc cho NAT / mạng công ty)
+        {
+          urls: [
+            "turn:global.relay.metered.ca:80",
+            "turn:global.relay.metered.ca:80?transport=tcp",
+            "turn:global.relay.metered.ca:443",
+            "turns:global.relay.metered.ca:443?transport=tcp",
+          ],
+          username: "b25f13a908741ebc9b2a58c7",
+          credential: "flOn9NEcWNvD8clt",
+        },
+      ],
+
+      // ✅ (Tùy chọn) dự trữ sẵn ICE candidate
+      iceCandidatePoolSize: 10,
+    };
 
     this.stompHandler = new StompHandler(this.config.signalingUrl);
     this.api = new PeerApi(this.config.apiBaseUrl || API_BASE_URL);
@@ -105,7 +105,10 @@ export class WebRTCManager {
    * Tham gia phòng qua REST API: /api/peer/create => trả về peerId + offer
    * Sau đó tạo answer và gửi lại qua /api/peer/answer
    */
-  async joinRoomViaApi(apiBaseUrl?: string, webhookUrl?: string): Promise<void> {
+  async joinRoomViaApi(
+    apiBaseUrl?: string,
+    webhookUrl?: string
+  ): Promise<void> {
     // Lưu apiBaseUrl để dùng khi gửi candidate
     // Sử dụng tham số hoặc fallback từ config hoặc API_BASE_URL
     const baseUrl = apiBaseUrl || this.config.apiBaseUrl || API_BASE_URL;
@@ -143,13 +146,18 @@ export class WebRTCManager {
     // ✅ QUAN TRỌNG: Subscribe channel TRƯỚC khi xử lý offer ban đầu
     // Đảm bảo subscription đã active để không bỏ lỡ messages từ SFU khi có peer mới tham gia
     if (this.stompHandler.connected) {
-      console.log("[WebRTC] 📡 Subscribing to STOMP channel for peer:", data.peerId);
+      console.log(
+        "[WebRTC] 📡 Subscribing to STOMP channel for peer:",
+        data.peerId
+      );
       this.subscribeToPeerChannel(data.peerId);
       // Đợi một chút để đảm bảo subscription đã active trước khi xử lý offer
       await new Promise((resolve) => setTimeout(resolve, 200));
       console.log("[WebRTC] ✅ STOMP subscription should be active now");
     } else {
-      console.warn("[WebRTC] ⚠️ STOMP not connected, cannot subscribe to peer channel");
+      console.warn(
+        "[WebRTC] ⚠️ STOMP not connected, cannot subscribe to peer channel"
+      );
     }
 
     await this.handleOfferAndReplyAnswerViaApi(data.peerId, data.offer);
@@ -165,7 +173,7 @@ export class WebRTCManager {
 
     try {
       // lưu peerId
-    this.peerId = peerId;
+      this.peerId = peerId;
 
       // tạo PC nếu chưa có
       if (!this.pcHandler) {
@@ -373,15 +381,14 @@ export class WebRTCManager {
               console.log(
                 "📩 ================================================"
               );
-          break;
+              break;
             }
 
             case "sfu-candidate": {
               // Format: { event: "sfu-candidate", data: { candidate } }
               if (clientMessage.data.candidate && this.pcHandler) {
                 const peerInfo = this.peerId || "unknown";
-                const userInfo =
-                  this.peerUsernames.get(peerInfo) || peerInfo;
+                const userInfo = this.peerUsernames.get(peerInfo) || peerInfo;
                 await this.iceHandler.handleRemoteCandidate(
                   this.pcHandler.connection,
                   clientMessage.data.candidate,
@@ -394,10 +401,10 @@ export class WebRTCManager {
                   clientMessage
                 );
               }
-          break;
+              break;
             }
 
-        default:
+            default:
               console.warn("[STOMP] ⚠️ Unknown event:", clientMessage.event);
           }
         } catch (error) {
@@ -508,9 +515,7 @@ export class WebRTCManager {
       // Strategy 2: Nếu chỉ có 1 peer khác, dùng nó
       if (!sourceUsername && this.peerUsernames.size === 1) {
         sourceUsername = Array.from(this.peerUsernames.values())[0];
-        console.log(
-          `[WebRTC] 📹 Using only available peer: ${sourceUsername}`
-        );
+        console.log(`[WebRTC] 📹 Using only available peer: ${sourceUsername}`);
       }
 
       // Strategy 3: Generate fallback username
@@ -533,9 +538,7 @@ export class WebRTCManager {
 
       // ✅ Duplicate protection
       if (this.remoteStreams.has(streamId)) {
-        console.log(
-          `[WebRTC] ⚠️ Stream ${streamId} already exists - SKIPPING`
-        );
+        console.log(`[WebRTC] ⚠️ Stream ${streamId} already exists - SKIPPING`);
         return;
       }
 
@@ -561,9 +564,7 @@ export class WebRTCManager {
   /**
    * Xử lý ICE Candidate - gửi lên App Server qua REST API
    */
-  private handleLocalIceCandidate(
-    event: RTCPeerConnectionIceEvent
-  ): void {
+  private handleLocalIceCandidate(event: RTCPeerConnectionIceEvent): void {
     if (event.candidate) {
       const candidate = event.candidate;
       const peerId = this.peerId || "unknown";
@@ -585,21 +586,13 @@ export class WebRTCManager {
           console.error("[ICE] ❌ Error sending candidate:", err);
         });
       } else {
-        console.warn(
-          "[ICE] ⚠️ Cannot send candidate: peerId missing"
-        );
+        console.warn("[ICE] ⚠️ Cannot send candidate: peerId missing");
       }
-      console.log(
-        "[ICE] 🧊 ================================================"
-      );
+      console.log("[ICE] 🧊 ================================================");
     } else {
-      console.log(
-        "[ICE] ✅ ========== ALL ICE CANDIDATES GATHERED =========="
-      );
+      console.log("[ICE] ✅ ========== ALL ICE CANDIDATES GATHERED ==========");
       console.log("[ICE] ✅ ICE gathering complete - ready for connection");
-      console.log(
-        "[ICE] ✅ ================================================"
-      );
+      console.log("[ICE] ✅ ================================================");
     }
   }
 
