@@ -4,7 +4,8 @@
 
 // API Base URL
 // export const API_BASE_URL = "https://api-lmh-writting-practice.id.vn";
-export const API_BASE_URL = "http://localhost:8081";
+// export const API_BASE_URL = "http://localhost:8081";
+export const API_BASE_URL = "http://13.211.229.225:8081";
 
 // API Endpoints
 export const API_ENDPOINTS = {
