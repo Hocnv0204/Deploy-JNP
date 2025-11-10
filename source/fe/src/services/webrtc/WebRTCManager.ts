@@ -11,7 +11,6 @@ import { PeerConnectionHandler } from "../connection/PeerConnectionHandler";
 import { getUsernameFromToken } from "../../utils/auth";
 import { API_BASE_URL } from "../../utils/constants";
 import type { WebRTCConfig } from "./WebRTCConfig";
-import type { StompSubscription } from "@stomp/stompjs";
 // Message format từ backend (ClientMessage)
 // Backend gửi message qua STOMP với format này khi có peer mới tham gia
 interface ClientMessage {
