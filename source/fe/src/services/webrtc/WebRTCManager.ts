@@ -50,23 +50,35 @@ export class WebRTCManager {
 
   constructor(config: WebRTCConfig) {
     this.config = {
+        ...config, // ✅ Đặt trước, để cho phép bạn override nếu cần
+      
         iceServers: [
-            {
-              urls: ["stun:stun.relay.metered.ca:80"],
-            },
-            {
-              urls: [
-                "turn:global.relay.metered.ca:80",
-                "turn:global.relay.metered.ca:80?transport=tcp",
-                "turn:global.relay.metered.ca:443",
-                "turns:global.relay.metered.ca:443?transport=tcp",
-              ],
-              username: "b25f13a908741ebc9b2a58c7",
-              credential: "flOn9NEcWNvD8clt",
-            },
-          ],
-      ...config,
-    };
+          // ✅ 1. STUN Google fallback
+          {
+            urls: [
+              "stun:stun1.l.google.com:19302",
+              "stun:stun2.l.google.com:19302",
+            ],
+          },
+          // ✅ 2. STUN Metered (ổn định và ít bị block)
+          { urls: "stun:stun.relay.metered.ca:80" },
+      
+          // ✅ 3. TURN server (bắt buộc cho NAT / mạng công ty)
+          {
+            urls: [
+              "turn:global.relay.metered.ca:80",
+              "turn:global.relay.metered.ca:80?transport=tcp",
+              "turn:global.relay.metered.ca:443",
+              "turns:global.relay.metered.ca:443?transport=tcp",
+            ],
+            username: "b25f13a908741ebc9b2a58c7",
+            credential: "flOn9NEcWNvD8clt",
+          },
+        ],
+      
+        // ✅ (Tùy chọn) dự trữ sẵn ICE candidate
+        iceCandidatePoolSize: 10,
+      };
 
     this.stompHandler = new StompHandler(this.config.signalingUrl);
     this.api = new PeerApi(this.config.apiBaseUrl || API_BASE_URL);

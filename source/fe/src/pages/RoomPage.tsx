@@ -36,6 +36,7 @@ export default function RoomPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [callDuration, setCallDuration] = useState(0);
   const [isConnecting, setIsConnecting] = useState(true); // ✅ State chờ kết nối
+  const [connectionError, setConnectionError] = useState(false); // ✅ State lỗi kết nối
   const { roomId } = useParams();
 
   const [remoteStreams, setRemoteStreams] = useState<Map<string, RemoteStream>>(
@@ -57,8 +58,9 @@ export default function RoomPage() {
     let connectionTimeout: number | null = null;
     if (!isHost) {
       connectionTimeout = window.setTimeout(() => {
-        console.warn("⚠️ [RoomPage] Guest - Connection timeout - forcing ready state");
+        console.warn("⚠️ [RoomPage] Guest - Connection timeout - showing error");
         setIsConnecting(false);
+        setConnectionError(true); // ✅ Hiển thị lỗi timeout
       }, 10000); // Guest: 10 giây
     }
 
@@ -77,6 +79,7 @@ export default function RoomPage() {
           clearTimeout(connectionTimeout);
         }
         setIsConnecting(false);
+        setConnectionError(false); // ✅ Clear error state nếu kết nối thành công
       },
 
       // Khi nhận remote stream (từ người khác)
@@ -190,11 +193,12 @@ export default function RoomPage() {
         // Guest sẽ đợi onConnectionReady callback hoặc timeout 10 giây
       } catch (error) {
         console.error("[RoomPage] ❌ Error initializing:", error);
-        // Nếu có lỗi, vẫn tắt loading để user thấy được
+        // Nếu có lỗi, hiển thị lỗi kết nối
         if (connectionTimeout) {
           clearTimeout(connectionTimeout);
         }
         setIsConnecting(false);
+        setConnectionError(true); // ✅ Hiển thị lỗi
       }
     })();
 
@@ -297,6 +301,60 @@ export default function RoomPage() {
     return (
       <div className="w-full min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-white">Đang tải...</div>
+      </div>
+    );
+  }
+
+  // ✅ Màn hình lỗi kết nối
+  if (connectionError) {
+    return (
+      <div className="w-full min-h-screen bg-gradient-to-br from-gray-900 via-red-900 to-gray-900 flex flex-col items-center justify-center">
+        <div className="bg-gray-800/50 backdrop-blur-lg border border-red-700/50 rounded-2xl p-12 max-w-md w-full mx-4">
+          {/* Icon Error */}
+          <div className="flex justify-center mb-8">
+            <div className="relative">
+              <div className="w-24 h-24 bg-red-600 rounded-full flex items-center justify-center">
+                <span className="text-5xl">⚠️</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Title */}
+          <h2 className="text-3xl font-bold text-white text-center mb-4">
+            Không thể kết nối
+          </h2>
+
+          {/* Description */}
+          <p className="text-gray-300 text-center mb-6">
+            Không thể kết nối vào phòng. Vui lòng thử lại sau.
+          </p>
+
+          {/* Room Info */}
+          <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700 mb-6">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400 text-sm">Phòng:</span>
+              <span className="text-white font-semibold">{roomId}</span>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+            >
+              <span>🔄</span>
+              <span>Tải lại trang</span>
+            </button>
+            <button
+              onClick={() => navigate("/")}
+              className="w-full bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+            >
+              <span>🏠</span>
+              <span>Về trang chủ</span>
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
