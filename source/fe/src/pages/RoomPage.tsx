@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import ChatPanel from "../components/ChatPanel";
 import ParticipantsList from "../components/ParticipantsList";
-import { WebRTCManager } from "../services/webrtcManager";
+// import { WebRTCManager } from "../services/webrtcManager";
 import { useParams } from "react-router-dom";
 import { API_BASE_URL, WS_ENDPOINTS } from "../utils/constants";
+import { WebRTCManager } from "../services/webrtc";
 
 interface Participant {
   id: string;
@@ -45,22 +46,36 @@ export default function RoomPage() {
   useEffect(() => {
     if (!currentUser || !roomId) return;
 
-    // ✅ Timeout an toàn: tự động tắt loading sau 10 giây
-    const connectionTimeout = setTimeout(() => {
-      console.warn("⚠️ [RoomPage] Connection timeout - forcing ready state");
-      setIsConnecting(false);
-    }, 10000);
+    // ✅ Kiểm tra xem user là host (tạo phòng) hay guest (tham gia phòng)
+    const currentRoomStr = localStorage.getItem("currentRoom");
+    const currentRoom = currentRoomStr ? JSON.parse(currentRoomStr) : null;
+    const isHost = currentRoom?.isHost === true;
+
+    // ✅ Timeout khác nhau: 
+    // - Host (tạo phòng): Không cần timeout vì sẽ tắt loading ngay sau khi join room thành công
+    // - Guest (tham gia): Timeout 10 giây để đảm bảo có đủ thời gian kết nối
+    let connectionTimeout: number | null = null;
+    if (!isHost) {
+      connectionTimeout = window.setTimeout(() => {
+        console.warn("⚠️ [RoomPage] Guest - Connection timeout - forcing ready state");
+        setIsConnecting(false);
+      }, 10000); // Guest: 10 giây
+    }
 
     // instantiate manager and keep a reference for control from UI handlers
     const manager = new WebRTCManager({
       signalingUrl: WS_ENDPOINTS.STOMP, // URL backend STOMP
       roomId: roomId,
       userId: currentUser.username,
+      apiBaseUrl: API_BASE_URL,          // ✅ Thêm dòng này
+
 
       // ✅ Callback khi kết nối đã sẵn sàng
       onConnectionReady: () => {
         console.log("🎉 [RoomPage] Connection ready! Hiding loading screen...");
-        clearTimeout(connectionTimeout);
+        if (connectionTimeout) {
+          clearTimeout(connectionTimeout);
+        }
         setIsConnecting(false);
       },
 
@@ -139,13 +154,14 @@ export default function RoomPage() {
 
     (async () => {
       try {
-        console.log("[RoomPage] 🔄 Initializing STOMP...");
-        await manager.initSignaling(); // ✅ WebSocket for signaling
+        // console.log("[RoomPage] 🔄 Initializing STOMP...");
+        // await manager.initSignaling(); // ✅ WebSocket for signaling
 
-        console.log("[RoomPage] 🚪 Joining signaling room...");
-        await manager.joinRoom(); // ✅ Inform AppServer "tôi đã vào phòng"
+        // console.log("[RoomPage] 🚪 Joining signaling room...");
+        // await manager.joinRoom(); // ✅ Inform AppServer "tôi đã vào phòng"
 
-        const stream = await manager.getLocalStream(); // ✅ Webcam
+        // const stream = await manager.getLocalStream();
+        const stream =  manager.getLocal() || null;
         console.log("[RoomPage] 📹 Local stream acquired");
 
         // Đảm bảo local video hiển thị
@@ -162,17 +178,31 @@ export default function RoomPage() {
         }
 
         // REST API flow – create peer, receive offer, send answer
-        const webhookUrl = `${API_BASE_URL}/sfu-webhook`;
+        // const webhookUrl = `${API_BASE_URL}/sfu-webhook`;
         console.log("[RoomPage] 🌐 Creating peer via API...");
-        await manager.joinRoomViaApi(API_BASE_URL, webhookUrl);
+        await manager.joinRoomViaApi();
+
+        // ✅ Nếu là host (tạo phòng), tắt loading ngay sau khi join room thành công
+        if (isHost) {
+          console.log("✅ [RoomPage] Host - Room joined successfully, hiding loading immediately...");
+          setIsConnecting(false);
+        }
+        // Guest sẽ đợi onConnectionReady callback hoặc timeout 10 giây
       } catch (error) {
         console.error("[RoomPage] ❌ Error initializing:", error);
+        // Nếu có lỗi, vẫn tắt loading để user thấy được
+        if (connectionTimeout) {
+          clearTimeout(connectionTimeout);
+        }
+        setIsConnecting(false);
       }
     })();
 
     return () => {
       // Cleanup
-      clearTimeout(connectionTimeout);
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+      }
       try {
         manager.leaveRoom();
       } catch (e) {
